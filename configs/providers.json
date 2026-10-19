@@ -1,0 +1,37 @@
+[
+  {
+    "name": "groq",
+    "base_url": "https://api.groq.com/openai/v1",
+    "key_env_prefix": "GROQ"
+  },
+  {
+    "name": "gemini",
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "key_env_prefix": "GEMINI"
+  },
+  {
+    "name": "openrouter",
+    "base_url": "https://openrouter.ai/api/v1",
+    "key_env_prefix": "OPENROUTER"
+  },
+  {
+    "name": "mistral",
+    "base_url": "https://api.mistral.ai/v1",
+    "key_env_prefix": "MISTRAL"
+  },
+  {
+    "name": "github",
+    "base_url": "https://models.github.ai/inference",
+    "key_env_prefix": "GITHUB_MODELS"
+  },
+  {
+    "name": "cloudflare",
+    "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
+    "key_env_prefix": "CLOUDFLARE"
+  },
+  {
+    "name": "nvidia",
+    "base_url": "https://integrate.api.nvidia.com/v1",
+    "key_env_prefix": "NVIDIA"
+  }
+]
