@@ -1,0 +1,10 @@
+# Gitleaks configuration, picked up automatically by the CI (gitleaks-action).
+# Default rules, plus an allowlist for the key template: its empty values
+# (`GROQ_API_KEY=` followed by `GROQ_API_KEY_2=` on the next line) are
+# mistaken for a secret by the generic-api-key rule.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Template of environment variables, without real values"
+paths = ['''(^|/)\.env\.example$''']
