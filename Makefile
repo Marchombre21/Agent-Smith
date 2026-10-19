@@ -2,7 +2,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python3
 UV := uv
 PROG := main.py
-SRCFILES := main.py
+SRCFILES := main.py src/
 
 help:
 	@echo "Available commands:"
