@@ -14,7 +14,7 @@ async def main() -> None:
             print("Tools :", [t.name for t in tools.tools])
             res = await session.call_tool("search_notes",
                                           {"query": "test3"})
-            print("search_notes ->", [c.text for c in res.content])
+            print("search_notes ->", [c for c in res.content])
 
 
 asyncio.run(main())

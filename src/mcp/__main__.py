@@ -1,5 +1,6 @@
 from pathlib import Path
 from fastmcp import FastMCP
+from typing import Any
 from utils import _safe_path
 
 NOTES_DIR = Path(__file__).parent / "notes"
@@ -13,7 +14,7 @@ def list_notes() -> list[str]:
 
 
 @mcp.tool()
-def read_note(name: str) -> str:
+def read_note(name: str) -> Any:
     """Lit le contenu d'une note Markdown par son nom de fichier."""
     path = _safe_path(name)
     if not path.is_file():
@@ -31,7 +32,7 @@ def search_notes(query: str) -> list[str]:
 
 
 @mcp.resource("note://{name}")
-def note_resource(name: str) -> str:
+def note_resource(name: str) -> Any:
     """Expose une note comme resource lisible par l'hôte."""
     return read_note(name)
 
