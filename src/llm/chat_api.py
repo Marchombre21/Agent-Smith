@@ -72,6 +72,7 @@ class ChatCompletionsApi:
         *,
         stop: Sequence[str] = (),
         max_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> LLMResponse:
         """Make one chat request with ``key`` and return the answer.
 
@@ -81,8 +82,12 @@ class ChatCompletionsApi:
             stop: Strings at which the model must stop generating.
             max_tokens: Upper bound on generated tokens; None leaves the
                 provider's default.
+            timeout: HTTP timeout in seconds for this request, typically
+                the time left on the task; None keeps the timeout of the
+                injected ``httpx.Client``.
 
         Raises:
+            ValueError: ``timeout`` is zero or negative.
             RateLimitError: HTTP 429.
             AuthError: HTTP 401 or 403.
             ProviderError: Timeout, network failure, 408, 5xx or a body
@@ -90,7 +95,7 @@ class ChatCompletionsApi:
             BadRequestError: Any other 4xx.
         """
         payload = self._payload(messages, stop, max_tokens)
-        response, elapsed_ms = self._post(key, payload)
+        response, elapsed_ms = self._post(key, payload, timeout)
         self._check_status(response)
         return self._to_response(response, elapsed_ms, messages)
 
@@ -143,7 +148,10 @@ class ChatCompletionsApi:
         return payload
 
     def _post(
-        self, key: ApiKey, payload: dict[str, Any]
+        self,
+        key: ApiKey,
+        payload: dict[str, Any],
+        timeout: float | None = None,
     ) -> tuple[httpx.Response, float]:
         """Send ``payload`` with ``key``; return the response and its time.
 
@@ -155,12 +163,20 @@ class ChatCompletionsApi:
             The raw response and the elapsed time in milliseconds.
 
         Raises:
+            ValueError: ``timeout`` is zero or negative.
             ProviderError: The request timed out or never got an answer.
         """
+        if timeout is not None and timeout <= 0:
+            raise ValueError("timeout must be positive")
         start = self._clock()
         try:
             response = self._http.post(
-                self._endpoint(key), headers=self._headers(key), json=payload
+                self._endpoint(key),
+                headers=self._headers(key),
+                json=payload,
+                timeout=(
+                    httpx.USE_CLIENT_DEFAULT if timeout is None else timeout
+                ),
             )
         except httpx.TimeoutException as exc:
             raise ProviderError(f"{self._provider.name}: timed out") from exc
@@ -245,9 +261,6 @@ class ChatCompletionsApi:
             input_tokens = prompt_chars // self._CHARS_PER_TOKEN
             output_tokens = len(text) // self._CHARS_PER_TOKEN
         else:
-            # Some providers (Gemini) leave hidden reasoning tokens out of
-            # completion_tokens but count them in total_tokens; the subject
-            # counts them toward the output limit.
             total = usage.get("total_tokens")
             if isinstance(total, int):
                 output_tokens = max(output_tokens, total - input_tokens)

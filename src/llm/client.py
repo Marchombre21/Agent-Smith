@@ -22,8 +22,13 @@ class LLMClient(ABC):
         *,
         stop: Sequence[str] = (),
         max_tokens: int | None = None,
+        timeout: float | None = None,
     ) -> LLMResponse:
         """Send the conversation and return the model's answer.
+
+        ``max_tokens`` and ``timeout`` are the budget left for this call,
+        in tokens and in seconds: the caller passes what remains of the
+        task's limits, so they are given per call and not at construction.
 
         Args:
             messages: The whole conversation, system prompt first.
@@ -32,6 +37,8 @@ class LLMClient(ABC):
                 follows its code.
             max_tokens: Upper bound on generated tokens for this call;
                 None leaves the provider's default.
+            timeout: Seconds this call may take in total, retries and
+                waits included; None means no limit.
 
         Raises:
             LLMError: The call failed for good (a subclass tells why).
