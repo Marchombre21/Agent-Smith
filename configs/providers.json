@@ -20,11 +20,6 @@
     "key_env_prefix": "MISTRAL"
   },
   {
-    "name": "github",
-    "base_url": "https://models.github.ai/inference",
-    "key_env_prefix": "GITHUB_MODELS"
-  },
-  {
     "name": "cloudflare",
     "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
     "key_env_prefix": "CLOUDFLARE"
