@@ -5,9 +5,13 @@ build/
 dist/
 wheels/
 *.egg-info
+moulinette
 
 # Virtual environments
 .venv
 
 # Secrets (API keys): never versioned. Template: .env.example
 .env
+
+# Subject
+*.pdf
