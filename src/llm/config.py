@@ -64,6 +64,18 @@ class ProviderConfig(BaseModel):
         """Normalise the URL so that '/chat/completions' can be appended."""
         return value.rstrip("/")
 
+    def matches_url(self, url: str) -> bool:
+        """Tell whether ``url`` is this provider's API root.
+
+        A trailing slash is ignored. In ``base_url``, the
+        ``{account_id}`` placeholder stands for any single path segment,
+        so the real Cloudflare URL of any account matches.
+        """
+        pattern = re.escape(self.base_url).replace(
+            re.escape("{account_id}"), "[^/]+"
+        )
+        return re.fullmatch(pattern, url.rstrip("/")) is not None
+
     def load_keys(
         self,
         environ: Mapping[str, str] | None = None,
@@ -171,3 +183,29 @@ class ProviderRegistry:
             raise KeyError(
                 f"unknown provider {name!r} (known: {known})"
             ) from None
+
+    def find_by_url(self, url: str) -> ProviderConfig:
+        """Return the provider whose API root is ``url``.
+
+        Used for the ``--provider-url`` option of the agents; see
+        ``ProviderConfig.matches_url`` for how URLs are compared.
+
+        Raises:
+            KeyError: no provider has this URL.
+            ValueError: several providers match, which means the
+                providers file is ambiguous.
+        """
+        found = [
+            provider
+            for provider in self._by_name.values()
+            if provider.matches_url(url)
+        ]
+        if not found:
+            known = ", ".join(
+                provider.base_url for provider in self._by_name.values()
+            )
+            raise KeyError(f"unknown provider URL {url!r} (known: {known})")
+        if len(found) > 1:
+            names = ", ".join(provider.name for provider in found)
+            raise ValueError(f"URL {url!r} matches several providers: {names}")
+        return found[0]
