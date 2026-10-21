@@ -146,8 +146,14 @@ class ProviderRegistry:
     def __init__(self, providers: Sequence[ProviderConfig]) -> None:
         """Index ``providers`` by name.
 
+        URLs are checked here, once, so that a bad providers file fails at
+        load time rather than when an agent looks a URL up. Two URLs
+        overlap when one matches the other (see ``matches_url``), which
+        also catches a hard-coded Cloudflare URL next to the template.
+
         Raises:
-            ValueError: two providers share the same name.
+            ValueError: two providers share the same name or have
+                overlapping URLs.
         """
         self._by_name: dict[str, ProviderConfig] = {}
         for provider in providers:
@@ -155,6 +161,15 @@ class ProviderRegistry:
                 raise ValueError(
                     f"duplicate provider name: {provider.name!r}"
                 )
+            for known in self._by_name.values():
+                if provider.matches_url(known.base_url) or known.matches_url(
+                    provider.base_url
+                ):
+                    raise ValueError(
+                        f"providers {known.name!r} and {provider.name!r} "
+                        f"have overlapping URLs: {known.base_url!r}, "
+                        f"{provider.base_url!r}"
+                    )
             self._by_name[provider.name] = provider
 
     @classmethod
@@ -165,7 +180,8 @@ class ProviderRegistry:
             OSError: the file cannot be read.
             pydantic.ValidationError: the JSON is malformed or a provider
                 is invalid.
-            ValueError: two providers share the same name.
+            ValueError: two providers share the same name or have
+                overlapping URLs.
         """
         adapter = TypeAdapter(list[ProviderConfig])
         return cls(adapter.validate_json(path.read_text(encoding="utf-8")))
@@ -188,24 +204,16 @@ class ProviderRegistry:
         """Return the provider whose API root is ``url``.
 
         Used for the ``--provider-url`` option of the agents; see
-        ``ProviderConfig.matches_url`` for how URLs are compared.
+        ``ProviderConfig.matches_url`` for how URLs are compared. At most
+        one provider can match: ``__init__`` rejects overlapping URLs.
 
         Raises:
             KeyError: no provider has this URL.
-            ValueError: several providers match, which means the
-                providers file is ambiguous.
         """
-        found = [
-            provider
-            for provider in self._by_name.values()
-            if provider.matches_url(url)
-        ]
-        if not found:
-            known = ", ".join(
-                provider.base_url for provider in self._by_name.values()
-            )
-            raise KeyError(f"unknown provider URL {url!r} (known: {known})")
-        if len(found) > 1:
-            names = ", ".join(provider.name for provider in found)
-            raise ValueError(f"URL {url!r} matches several providers: {names}")
-        return found[0]
+        for provider in self._by_name.values():
+            if provider.matches_url(url):
+                return provider
+        known = ", ".join(
+            provider.base_url for provider in self._by_name.values()
+        )
+        raise KeyError(f"unknown provider URL {url!r} (known: {known})")
