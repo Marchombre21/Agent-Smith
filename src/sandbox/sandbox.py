@@ -7,7 +7,7 @@ from pathlib import Path
 from resource import setrlimit, RLIMIT_AS
 
 
-def start_worker(config: SandboxConfig):
+def start_worker(config: SandboxConfig) -> Popen:
     worker = Path(__file__).parent / "worker.py"
     max_mem_mo = config.max_memory_mb * 1024 * 1024
     return Popen([sys.executable, '-I', worker, config.model_dump_json()],
@@ -29,11 +29,13 @@ def reborn(proc: Popen, timed_out: bool, config: SandboxConfig) -> Popen:
     return start_worker(config)
 
 
-def main():
+def main() -> None:
     config = SandboxConfig()
     proc = start_worker(config)
 
     while True:
+        if proc.stdin is None or proc.stdout is None:
+            raise RuntimeError("worker pipes not opened")
         line = sys.stdin.readline()
         if line == "":
             break
@@ -46,6 +48,8 @@ def main():
             proc = reborn(proc, True, config)
             continue
 
+        if proc.stdin is None or proc.stdout is None:
+            raise RuntimeError("worker pipes not opened")
         brut_answer = proc.stdout.readline()
 
         # If the answer is "" it means that the process died for unknown

@@ -3,7 +3,7 @@
 # from resource import setrlimit
 
 
-def main():
+def main() -> int:
     # parser = argparse.ArgumentParser(prog='sandbox',
     #                                  description='Launch a sandbox',
     #                                  epilog='Launch a sandbox')

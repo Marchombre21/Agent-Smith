@@ -2,25 +2,29 @@ import io
 import json
 import sys
 import builtins
+from typing import Mapping, Sequence
+from types import ModuleType
 from contextlib import redirect_stdout
 
 
-def main():
+def main() -> None:
     config = json.loads(sys.argv[1])
     real_builtins = vars(builtins)
+    real_import = builtins.__import__
     builtins_dict_copy = dict(real_builtins)
 
     def check_import(name: str,
-                     globals=None,
-                     locals=None,
-                     fromlist=(),
-                     level=0):
+                     globals: Mapping[str, object] | None = None,
+                     locals: Mapping[str, object] | None = None,
+                     fromlist: Sequence[str] | None = (),
+                     level: int = 0) -> ModuleType:
         pattern = f"{name.split('.')[0]}.*"
         authorized = config["authorized_imports"]
         if name not in authorized and pattern not in authorized:
             raise ImportError(f"Import of '{name}' is not allowed")
-        return real_builtins["__import__"](name, globals, locals, fromlist,
-                                           level)
+        module: ModuleType = real_import(name, globals, locals, fromlist,
+                                         level)
+        return module
 
     builtins_dict_copy["__import__"] = check_import
 
