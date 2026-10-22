@@ -3,11 +3,13 @@
 import logging
 import math
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+
+import httpx
 
 from src.llm.chat_api import ChatCompletionsApi
 from src.llm.client import LLMClient
-from src.llm.config import ApiKey
+from src.llm.config import ApiKey, ProviderRegistry
 from src.llm.errors import AuthError, LLMError, ProviderError, RateLimitError
 from src.llm.key_pool import KeyPool
 from src.llm.models import LLMResponse, Message
@@ -65,6 +67,45 @@ class RotatingClient(LLMClient):
         self._max_attempts = max_attempts
         self._clock = clock
         self._sleep = sleep
+
+    @classmethod
+    def from_provider_url(
+        cls,
+        url: str,
+        model_name: str,
+        registry: ProviderRegistry,
+        http: httpx.Client,
+        environ: Mapping[str, str] | None = None,
+    ) -> "RotatingClient":
+        """Build a ready client from the agents' command-line options.
+
+        Finds the provider of ``url``, loads its keys and wires the key
+        pool and the API together. For a URL with an account id
+        (Cloudflare), the id only identifies the provider: each key is
+        used with its own account, as set in the environment.
+
+        Args:
+            url: Value of ``--provider-url``.
+            model_name: Value of ``--model-name``.
+            registry: The known providers.
+            http: HTTP client, owned and closed by the caller.
+            environ: Variables holding the keys; by default the process
+                environment completed by ``.env`` (see ``load_keys``).
+
+        Raises:
+            KeyError: no provider has this URL.
+            ValueError: the provider has no key, the URL is ambiguous, a
+                key lacks its account id, or ``model_name`` is empty.
+        """
+        provider = registry.find_by_url(url)
+        keys = provider.load_keys(environ)
+        if not keys:
+            raise ValueError(
+                f"no API key for {provider.name}: set "
+                f"{provider.key_env_prefix}_API_KEY in .env"
+            )
+        api = ChatCompletionsApi(provider, model_name, http)
+        return cls(api, KeyPool(keys))
 
     def complete(
         self,

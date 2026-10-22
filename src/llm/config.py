@@ -64,6 +64,18 @@ class ProviderConfig(BaseModel):
         """Normalise the URL so that '/chat/completions' can be appended."""
         return value.rstrip("/")
 
+    def matches_url(self, url: str) -> bool:
+        """Tell whether ``url`` is this provider's API root.
+
+        A trailing slash is ignored. In ``base_url``, the
+        ``{account_id}`` placeholder stands for any single path segment,
+        so the real Cloudflare URL of any account matches.
+        """
+        pattern = re.escape(self.base_url).replace(
+            re.escape("{account_id}"), "[^/]+"
+        )
+        return re.fullmatch(pattern, url.rstrip("/")) is not None
+
     def load_keys(
         self,
         environ: Mapping[str, str] | None = None,
@@ -134,8 +146,14 @@ class ProviderRegistry:
     def __init__(self, providers: Sequence[ProviderConfig]) -> None:
         """Index ``providers`` by name.
 
+        URLs are checked here, once, so that a bad providers file fails at
+        load time rather than when an agent looks a URL up. Two URLs
+        overlap when one matches the other (see ``matches_url``), which
+        also catches a hard-coded Cloudflare URL next to the template.
+
         Raises:
-            ValueError: two providers share the same name.
+            ValueError: two providers share the same name or have
+                overlapping URLs.
         """
         self._by_name: dict[str, ProviderConfig] = {}
         for provider in providers:
@@ -143,6 +161,15 @@ class ProviderRegistry:
                 raise ValueError(
                     f"duplicate provider name: {provider.name!r}"
                 )
+            for known in self._by_name.values():
+                if provider.matches_url(known.base_url) or known.matches_url(
+                    provider.base_url
+                ):
+                    raise ValueError(
+                        f"providers {known.name!r} and {provider.name!r} "
+                        f"have overlapping URLs: {known.base_url!r}, "
+                        f"{provider.base_url!r}"
+                    )
             self._by_name[provider.name] = provider
 
     @classmethod
@@ -153,7 +180,8 @@ class ProviderRegistry:
             OSError: the file cannot be read.
             pydantic.ValidationError: the JSON is malformed or a provider
                 is invalid.
-            ValueError: two providers share the same name.
+            ValueError: two providers share the same name or have
+                overlapping URLs.
         """
         adapter = TypeAdapter(list[ProviderConfig])
         return cls(adapter.validate_json(path.read_text(encoding="utf-8")))
@@ -171,3 +199,21 @@ class ProviderRegistry:
             raise KeyError(
                 f"unknown provider {name!r} (known: {known})"
             ) from None
+
+    def find_by_url(self, url: str) -> ProviderConfig:
+        """Return the provider whose API root is ``url``.
+
+        Used for the ``--provider-url`` option of the agents; see
+        ``ProviderConfig.matches_url`` for how URLs are compared. At most
+        one provider can match: ``__init__`` rejects overlapping URLs.
+
+        Raises:
+            KeyError: no provider has this URL.
+        """
+        for provider in self._by_name.values():
+            if provider.matches_url(url):
+                return provider
+        known = ", ".join(
+            provider.base_url for provider in self._by_name.values()
+        )
+        raise KeyError(f"unknown provider URL {url!r} (known: {known})")
