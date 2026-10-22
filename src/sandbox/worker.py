@@ -2,7 +2,8 @@ import io
 import json
 import sys
 import builtins
-from typing import Mapping, Sequence
+from pathlib import Path
+from typing import Mapping, Sequence, Any, IO
 from types import ModuleType
 from contextlib import redirect_stdout
 
@@ -10,6 +11,7 @@ from contextlib import redirect_stdout
 def main() -> None:
     config = json.loads(sys.argv[1])
     real_builtins = vars(builtins)
+    real_open = builtins.open
     real_import = builtins.__import__
     builtins_dict_copy = dict(real_builtins)
 
@@ -26,6 +28,15 @@ def main() -> None:
                                          level)
         return module
 
+    def check_access_files(path: str, *args: Any, **kwargs: Any) -> IO[Any]:
+        real_path = Path(path).resolve()
+        for auth_path in config["allowed_directories"]:
+            if real_path.is_relative_to(auth_path):
+                file: IO[Any] = real_open(path, *args, **kwargs)
+                return file
+        raise PermissionError(f"Cannot access to {real_path}.")
+
+    builtins_dict_copy["open"] = check_access_files
     builtins_dict_copy["__import__"] = check_import
 
     globals_values = {"__builtins__": builtins_dict_copy}
