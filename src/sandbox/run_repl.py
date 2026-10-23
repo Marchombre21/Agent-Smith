@@ -4,6 +4,17 @@ from src.sandbox_port import ExecutionResult
 
 
 def run_repl(sandbox: Sandbox) -> None:
+    """Run an interactive prompt that executes each entry in the sandbox.
+
+    Each line typed is executed in the sandbox, then its output, its
+    error and what happened to the worker (timeout, lost variables) are
+    printed. Empty lines are ignored. The loop stops on ``exit`` or EOF
+    (Ctrl+D); Ctrl+C is not caught here, so that the caller can close
+    the sandbox.
+
+    Args:
+        sandbox: An already started sandbox.
+    """
 
     while True:
         try:

@@ -11,6 +11,15 @@ from subprocess import PIPE, Popen, TimeoutExpired
 
 
 class Sandbox(SandboxPort):
+    """Executes untrusted code in a separate, restricted worker process.
+
+    The worker keeps its variables between executions. It is restarted
+    when it exceeds the time limit or dies, which loses its variables.
+    Use it as a context manager so that the worker is always stopped:
+
+        with Sandbox(config) as sandbox:
+            result = sandbox.execute("print(1 + 1)")
+    """
     def __init__(self, config: SandboxConfig) -> None:
         self.config = config
         self.max_time = config.max_execution_time_seconds
@@ -42,6 +51,26 @@ class Sandbox(SandboxPort):
     def execute(
         self, code: str, timeout: float | None = None
     ) -> ExecutionResult:
+        """Execute code in the worker process (see ``SandboxPort.execute``).
+
+        The code is sent to the worker, then the sandbox waits for its
+        answer for at most the smaller of ``timeout`` and the configured
+        time limit. If the time limit is exceeded, the worker is killed;
+        if it died, or was killed, a new one is started and the result
+        reports ``state_reset``.
+
+        Args:
+            code: Python source to execute.
+            timeout: Seconds allowed for this execution; None means the
+                limit of the sandbox configuration.
+
+        Returns:
+            What happened during the execution. Errors of the code itself
+            are reported in it, never raised.
+
+        Raises:
+            SandboxError: If the sandbox is not started.
+        """
         _, stdin, stdout = self._pipes
         limit = (
             self.max_time if timeout is None else min(timeout, self.max_time)
@@ -73,10 +102,20 @@ class Sandbox(SandboxPort):
         )
 
     def __enter__(self) -> "Sandbox":
+        """Start the worker when entering a ``with`` block.
+
+        Returns:
+            The sandbox itself, bound by ``with ... as``.
+        """
         self.start()
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        """Close the worker when leaving a ``with`` block.
+
+        Called even if an exception was raised; the exception is not
+        suppressed, so that it reaches the caller.
+        """
         self.close()
 
     @property
@@ -91,6 +130,8 @@ class Sandbox(SandboxPort):
         return self.proc, self.proc.stdin, self.proc.stdout
 
     def close(self) -> None:
+        """Close the worker properly.
+        """
         if self.proc is None:
             return
         if self.proc.stdin is not None:

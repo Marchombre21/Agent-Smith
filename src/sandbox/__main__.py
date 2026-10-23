@@ -11,6 +11,11 @@ from src.sandbox.run_repl import run_repl
 
 
 def main() -> None:
+    """Entry point of the ``sandbox`` command.
+
+    Runs the sandbox CLI and turns expected errors (config file,
+    sandbox start) into a message on stderr with exit code 1.
+    """
     try:
         _run()
     except (OSError, TemplateError, SandboxError) as e:
@@ -34,6 +39,17 @@ def load_config(path: str | None) -> SandboxConfig:
 
 
 def _run() -> None:
+    """Parse the command line, then run the REPL in a sandbox.
+
+    The sandbox is configured from the JSON file given as argument, or
+    with the default config if there is none. It is always closed at
+    the end, including on Ctrl+C.
+
+    Raises:
+        OSError: If the config file cannot be read.
+        TemplateError: If the config file is not a valid config.
+        SandboxError: If the sandbox cannot be started.
+    """
     parser = ArgumentParser()
     parser.add_argument(
         "sand_template",

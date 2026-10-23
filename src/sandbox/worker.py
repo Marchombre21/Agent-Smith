@@ -1,3 +1,11 @@
+"""Worker process of the sandbox: executes untrusted code in isolation.
+
+Launched by ``Sandbox.start()`` with the sandbox config as a JSON
+argument. It reads one JSON message per line on stdin
+(``{"code": ...}``) and answers one JSON line per execution on stdout
+(``{"stdout": ..., "error": ..., "memory_exceeded": ...}``).
+"""
+
 import builtins
 import io
 import json
@@ -10,6 +18,14 @@ from typing import Any, IO, Mapping, Sequence
 
 
 def main() -> None:
+    """Run the execution loop of the worker.
+
+    Restricts imports and file access, then executes each code received
+    on stdin in this restricted namespace, until stdin is closed.
+    Variables are kept from one execution to the next. The output of
+    the code is captured, so that it cannot corrupt the JSON messages
+    sent to the parent.
+    """
     config = json.loads(sys.argv[1])
     real_builtins = vars(builtins)
     real_open = builtins.open
@@ -23,6 +39,19 @@ def main() -> None:
         fromlist: Sequence[str] | None = (),
         level: int = 0,
     ) -> ModuleType:
+        """Import a module only if it is in the authorized imports.
+
+        Replaces ``__import__`` in the builtins of the executed code. A
+        module is allowed if its exact name is in the list, or if
+        ``<top-level package>.*`` is (e.g. ``collections.*`` allows
+        ``collections.abc``).
+
+        Returns:
+            The imported module, from the real ``__import__``.
+
+        Raises:
+            ImportError: If the module is not allowed.
+        """
         pattern = f"{name.split('.')[0]}.*"
         authorized = config["authorized_imports"]
         if name not in authorized and pattern not in authorized:
@@ -33,6 +62,19 @@ def main() -> None:
         return module
 
     def check_access_files(path: str, *args: Any, **kwargs: Any) -> IO[Any]:
+        """Open a file only if it is inside an allowed directory.
+
+        Replaces ``open`` in the builtins of the executed code. The path
+        is resolved first (``..`` and symbolic links), so that it cannot
+        escape the allowed directories.
+
+        Returns:
+            The opened file, from the real ``open``.
+
+        Raises:
+            PermissionError: If the file is outside the allowed
+                directories.
+        """
         real_path = Path(path).resolve()
         for auth_path in config["allowed_directories"]:
             if real_path.is_relative_to(auth_path):
