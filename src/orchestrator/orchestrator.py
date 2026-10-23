@@ -4,8 +4,10 @@ from typing import Optional
 
 from src.extraction.chain import CodeExtraction
 from src.llm.client import LLMClient
+from src.llm.errors import LLMError
 from src.orchestrator.budget import TaskBudget
 from src.orchestrator.conversation import Conversation
+from src.orchestrator.models import RunResult
 from src.orchestrator.observation import ObservationFormatter
 from src.orchestrator.recorder import StepRecorder
 from src.sandbox_port import ExecutionResult, SandboxError, SandboxPort
@@ -53,6 +55,38 @@ class Orchestrator:
         self._conversation = conversation
         self._budget = budget
         self._recorder = recorder
+
+    def run(self) -> RunResult:
+        """Loop over steps until an answer, a limit or a failure.
+
+        Before each step, the budget says whether the task may go on and
+        whether the next call fits in the input tokens left. The loop
+        always ends: ``stop_reason()`` stops it at the iteration limit.
+
+        Returns:
+            The answer, or why there is none. Only LLM and sandbox
+            failures are caught here; anything else is a bug and goes up
+            to the CLI.
+        """
+        while True:
+            reason = self._budget.stop_reason()
+            if reason is not None:
+                return RunResult(error=reason)
+            estimated = self._conversation.estimate_input_tokens()
+            if not self._budget.can_afford(estimated):
+                return RunResult(
+                    error=f"input token limit would be exceeded "
+                    f"(next call estimated at {estimated}, "
+                    f"{self._budget.remaining_input_tokens} left)"
+                )
+            try:
+                answer = self._step()
+            except LLMError as error:
+                return RunResult(error=f"LLM failure: {error}")
+            except SandboxError as error:
+                return RunResult(error=f"Sandbox failure: {error}")
+            if answer is not None:
+                return RunResult(final_answer=answer)
 
     def _step(self) -> Optional[str]:
         """Do one step: ask the LLM, run its code, feed the result back.
