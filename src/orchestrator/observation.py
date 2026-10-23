@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from src.extraction.base import ExtractionResult
+from src.extraction.models import ExtractionResult
 from src.sandbox_port import ExecutionResult
 
 

@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable
 from typing import Optional
 
-from src.orchestrator.limits import TaskLimits
+from src.orchestrator.models import TaskLimits
 
 
 class TaskBudget:

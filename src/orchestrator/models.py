@@ -1,4 +1,6 @@
-"""The limits of one task, as set by the subject."""
+"""Data of the agent loop: the limits it obeys, the result it returns."""
+
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -98,3 +100,25 @@ class TaskLimits(BaseModel):
             timeout_seconds=timeout_seconds,
             time_margin_seconds=time_margin_seconds,
         )
+
+
+class RunResult(BaseModel):
+    """What the loop hands back to the CLI when it stops.
+
+    The loop does not build the ``SolutionOutput``: the solution and the
+    success depend on the benchmark (MBPP code, SWE-bench patch), so the
+    CLI of each benchmark computes them from this result.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    final_answer: Optional[str] = Field(
+        default=None,
+        description="Value passed to final_answer(); None when the loop "
+        "stopped without one",
+    )
+    error: Optional[str] = Field(
+        default=None,
+        description="Why the loop stopped without an answer (budget, LLM "
+        "or sandbox failure); None when it got one",
+    )
