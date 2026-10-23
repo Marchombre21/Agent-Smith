@@ -1,69 +1,96 @@
 import json
 import select
 import sys
-from ConfigSandbox import SandboxConfig
-from subprocess import Popen, PIPE
+
+from typing import Any, IO
+from src.sandbox.execution_result import ExecutionResult
+from src.sandbox.ConfigSandbox import SandboxConfig
 from pathlib import Path
-from resource import setrlimit, RLIMIT_AS
+from resource import RLIMIT_AS, setrlimit
+from subprocess import PIPE, Popen, TimeoutExpired
 
 
-def start_worker(config: SandboxConfig) -> Popen:
-    worker = Path(__file__).parent / "worker.py"
-    max_mem_mo = config.max_memory_mb * 1024 * 1024
-    return Popen([sys.executable, '-I', worker, config.model_dump_json()],
-                 stdin=PIPE,
-                 stdout=PIPE,
-                 text=True,
-                 preexec_fn=lambda: setrlimit(RLIMIT_AS,
-                                              (max_mem_mo, max_mem_mo)))
+class Sandbox:
+    def __init__(self, config: SandboxConfig) -> None:
+        self.config = config
+        self.max_time = config.max_execution_time_seconds
+        self.memory = config.max_memory_mb
+        self.proc: Popen[str] | None = None
 
+    def start(self) -> None:
+        worker = Path(__file__).parent / "worker.py"
+        if not worker.exists():
+            raise FileNotFoundError(f"Worker not found: {worker}")
+        max_mem_mo = self.memory * 1024 * 1024
+        self.proc = Popen(
+            [sys.executable, "-I", worker, self.config.model_dump_json()],
+            stdin=PIPE,
+            stdout=PIPE,
+            text=True,
+            preexec_fn=lambda: setrlimit(RLIMIT_AS, (max_mem_mo, max_mem_mo)),
+        )
 
-def reborn(proc: Popen, timed_out: bool, config: SandboxConfig) -> Popen:
-    if timed_out:
-        proc.kill()
-        print("Timeout: execution killed, variables lost")
-    else:
-        print("Execution killed, variables lost")
+    def execute(self, code: str) -> ExecutionResult:
+        _, stdin, stdout = self._pipes
+        result = ExecutionResult(output="")
+        stdin.write(json.dumps({"code": code}) + "\n")
+        stdin.flush()
 
-    proc.wait()
-    return start_worker(config)
-
-
-def main() -> None:
-    config = SandboxConfig()
-    proc = start_worker(config)
-
-    while True:
-        if proc.stdin is None or proc.stdout is None:
-            raise RuntimeError("worker pipes not opened")
-        line = sys.stdin.readline()
-        if line == "":
-            break
-        proc.stdin.write(json.dumps({"code": line}) + "\n")
-        proc.stdin.flush()
-
-        ready, _, _ = select.select([proc.stdout], [], [],
-                                    config.max_execution_time_seconds)
+        ready, _, _ = select.select([stdout], [], [], self.max_time)
         if not ready:
-            proc = reborn(proc, True, config)
-            continue
+            self._restart(True, result)
+            return result
 
-        if proc.stdin is None or proc.stdout is None:
-            raise RuntimeError("worker pipes not opened")
-        brut_answer = proc.stdout.readline()
+        brut_answer = stdout.readline()
 
-        # If the answer is "" it means that the process died for unknown
-        # reason (maybe a sys.exit() from the code).
+        # If the answer is "" it means that the worker process died for
+        # unknown reason (maybe a sys.exit() from the code).
         if brut_answer == "":
-            proc = reborn(proc, False, config)
-            continue
+            self._restart(False, result)
+            return result
 
-        answer = json.loads(brut_answer)
-        print(answer["output"], end="")
+        result.output = json.loads(brut_answer)["output"]
+        return result
 
-    proc.stdin.close()
-    proc.wait()
+    def __enter__(self) -> "Sandbox":
+        self.start()
+        return self
 
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        self.close()
 
-if __name__ == "__main__":
-    main()
+    @property
+    def _pipes(self) -> tuple[Popen[str], IO[str], IO[str]]:
+        """Return the running worker and its pipes, or raise if not started."""
+        if (
+            self.proc is None
+            or self.proc.stdin is None
+            or self.proc.stdout is None
+        ):
+            raise RuntimeError("Sandbox is not started")
+        return self.proc, self.proc.stdin, self.proc.stdout
+
+    def close(self) -> None:
+        if self.proc is None:
+            return
+        if self.proc.stdin is not None:
+            self.proc.stdin.close()
+        try:
+            self.proc.wait(timeout=2)
+        except TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+        self.proc = None
+
+    def _restart(self, timed_out: bool, result: ExecutionResult) -> None:
+        proc, _, _ = self._pipes
+        if timed_out:
+            proc.kill()
+            result.timed_out = True
+            result.output = "Timeout: execution killed, variables lost"
+        else:
+            result.crashed = True
+            result.output = "Execution killed, variables lost"
+
+        proc.wait()
+        self.start()

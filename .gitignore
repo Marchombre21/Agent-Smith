@@ -16,3 +16,6 @@ moulinette
 
 # Subject
 *.pdf
+
+# flake8
+.flake8
