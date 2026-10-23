@@ -29,7 +29,7 @@ def run_repl(sandbox: Sandbox) -> None:
         result: ExecutionResult = sandbox.execute(line)
         print(result.stdout, end="")
         if result.error:
-            print(result.error.rstrip("\n"), end="")
+            print(result.error.rstrip("\n"))
         if result.timed_out:
             print("Timeout: execution killed")
         if result.state_reset:
