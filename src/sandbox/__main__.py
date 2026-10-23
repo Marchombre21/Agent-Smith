@@ -3,7 +3,8 @@ import sys
 from json import JSONDecodeError
 from argparse import ArgumentParser
 from src.sandbox.sandbox import Sandbox
-from src.sandbox.ConfigSandbox import SandboxConfig
+from src.models import SandboxConfig
+from src.sandbox_port import SandboxError
 from pydantic import ValidationError
 from src.sandbox.errors import TemplateError
 from src.sandbox.run_repl import run_repl
@@ -12,7 +13,7 @@ from src.sandbox.run_repl import run_repl
 def main() -> None:
     try:
         _run()
-    except (OSError, TemplateError) as e:
+    except (OSError, TemplateError, SandboxError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -50,7 +51,10 @@ def _run() -> None:
     config: SandboxConfig = load_config(args.sand_template)
 
     with Sandbox(config=config) as sandbox:
-        run_repl(sandbox)
+        try:
+            run_repl(sandbox)
+        except KeyboardInterrupt:
+            print()
 
 
 if __name__ == "__main__":

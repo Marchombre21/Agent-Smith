@@ -1,6 +1,7 @@
 import builtins
 import io
 import json
+import traceback
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -28,7 +29,7 @@ def main() -> None:
             raise ImportError(f"Import of '{name}' is not allowed")
         module: ModuleType = real_import(
             name, globals, locals, fromlist, level
-            )
+        )
         return module
 
     def check_access_files(path: str, *args: Any, **kwargs: Any) -> IO[Any]:
@@ -50,12 +51,27 @@ def main() -> None:
             break
         code = json.loads(line)["code"]
         buffer = io.StringIO()
+        error, memory_exceeded = None, False
         try:
             with redirect_stdout(buffer):
                 exec(code, globals_values)
+        except MemoryError:
+            error, memory_exceeded = "MemoryError", True
         except Exception as e:
-            buffer.write(f"{type(e).__name__}: {e}\n")
-        sys.stdout.write(json.dumps({"output": buffer.getvalue()}) + "\n")
+            # Skip the first frame: it is the exec() call of the worker.
+            # It is useless for the LLM and reveals the host file path.
+            tb = e.__traceback__.tb_next if e.__traceback__ else None
+            error = "".join(traceback.format_exception(type(e), e, tb))
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "stdout": buffer.getvalue(),
+                    "error": error,
+                    "memory_exceeded": memory_exceeded,
+                }
+            )
+            + "\n"
+        )
         sys.stdout.flush()
 
 
