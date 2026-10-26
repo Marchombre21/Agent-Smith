@@ -2,7 +2,8 @@
 
 from collections.abc import Sequence
 
-from src.extraction.base import CodeExtractor, ExtractionResult
+from src.extraction.base import CodeExtractor
+from src.extraction.models import ExtractionResult
 from src.extraction.hermes import HermesExtractor
 from src.extraction.python_block import PythonBlockExtractor
 from src.extraction.react import ReActExtractor
