@@ -3,7 +3,8 @@
 import re
 import textwrap
 
-from src.extraction.base import CodeExtractor, ExtractionResult
+from src.extraction.base import CodeExtractor
+from src.extraction.models import ExtractionResult
 
 
 class PythonBlockExtractor(CodeExtractor):

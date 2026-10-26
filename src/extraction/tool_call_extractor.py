@@ -5,7 +5,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from src.extraction.base import CodeExtractor, ExtractionResult
+from src.extraction.base import CodeExtractor
+from src.extraction.models import ExtractionResult
 from src.extraction.tool_call import ToolCall
 
 
