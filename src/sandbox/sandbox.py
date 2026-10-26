@@ -99,6 +99,7 @@ class Sandbox(SandboxPort):
             stdout=answer["stdout"],
             error=answer["error"],
             memory_exceeded=answer["memory_exceeded"],
+            final_answer=answer["answer"]
         )
 
     def __enter__(self) -> "Sandbox":

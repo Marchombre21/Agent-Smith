@@ -14,7 +14,21 @@ import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import ModuleType
-from typing import Any, IO, Mapping, Sequence
+from typing import Any, IO, Mapping, Sequence, NoReturn
+
+
+class FinalAnswerSignal(BaseException):
+    """Raised by final_answer() to stop the execution
+    """
+
+
+def final_answer(code: Any) -> NoReturn:
+    """Ends the execution and hands value to the agent as the final answer.
+
+    Args:
+        code: The final code.
+    """
+    raise FinalAnswerSignal(code)
 
 
 def main() -> None:
@@ -31,6 +45,7 @@ def main() -> None:
     real_open = builtins.open
     real_import = builtins.__import__
     builtins_dict_copy = dict(real_builtins)
+    builtins_dict_copy["final_answer"] = final_answer
 
     def check_import(
         name: str,
@@ -93,12 +108,14 @@ def main() -> None:
             break
         code = json.loads(line)["code"]
         buffer = io.StringIO()
-        error, memory_exceeded = None, False
+        error, memory_exceeded, answer = None, False, None
         try:
             with redirect_stdout(buffer):
                 exec(code, globals_values)
         except MemoryError:
             error, memory_exceeded = "MemoryError", True
+        except FinalAnswerSignal as e:
+            answer = str(e.args[0])
         except Exception as e:
             # Skip the first frame: it is the exec() call of the worker.
             # It is useless for the LLM and reveals the host file path.
@@ -110,6 +127,7 @@ def main() -> None:
                     "stdout": buffer.getvalue(),
                     "error": error,
                     "memory_exceeded": memory_exceeded,
+                    "answer": answer
                 }
             )
             + "\n"

@@ -49,3 +49,5 @@ def run_repl(sandbox: Sandbox) -> None:
             print("Timeout: execution killed")
         if result.state_reset:
             print("Variables lost")
+        if result.final_answer is not None:
+            print(f"Final answer: {result.final_answer}")
