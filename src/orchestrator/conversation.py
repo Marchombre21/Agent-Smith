@@ -73,11 +73,6 @@ class Conversation:
         """All the messages, system prompt first, to send to the LLM."""
         return tuple(self._messages)
 
-    @property
-    def system_prompt(self) -> str:
-        """The system prompt, as given to the constructor."""
-        return self._messages[0].content
-
     def estimate_input_tokens(self) -> int:
         """Estimate the input tokens of a call sending these messages.
 

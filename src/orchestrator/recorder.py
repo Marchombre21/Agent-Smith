@@ -1,6 +1,6 @@
 """The trace of one task, in the format the subject imposes."""
 
-from typing import List, Literal, Optional, Tuple
+from typing import List, Literal, Optional
 
 from src.llm.models import LLMResponse
 from src.models import SolutionOutput, StepMetrics
@@ -70,11 +70,6 @@ class StepRecorder:
         )
         self._steps.append(metrics)
         return metrics
-
-    @property
-    def steps(self) -> Tuple[StepMetrics, ...]:
-        """Metrics of the steps recorded so far, in order."""
-        return tuple(self._steps)
 
     def finish(
         self,

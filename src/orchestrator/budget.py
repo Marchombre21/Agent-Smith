@@ -49,26 +49,6 @@ class TaskBudget:
         self._output_tokens += output_tokens
 
     @property
-    def limits(self) -> TaskLimits:
-        """The limits this budget counts against."""
-        return self._limits
-
-    @property
-    def iterations(self) -> int:
-        """Steps recorded so far."""
-        return self._iterations
-
-    @property
-    def input_tokens(self) -> int:
-        """Input tokens used so far, summed over all steps."""
-        return self._input_tokens
-
-    @property
-    def output_tokens(self) -> int:
-        """Output tokens used so far, summed over all steps."""
-        return self._output_tokens
-
-    @property
     def elapsed_seconds(self) -> float:
         """Seconds since the process started."""
         return self._clock() - self._started_at
