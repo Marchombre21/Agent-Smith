@@ -1,9 +1,9 @@
 """Worker process of the sandbox: executes untrusted code in isolation.
 
-Launched by ``Sandbox.start()`` with the sandbox config as a JSON
+Launched by 'Sandbox.start()' with the sandbox config as a JSON
 argument. It reads one JSON message per line on stdin
-(``{"code": ...}``) and answers one JSON line per execution on stdout
-(``{"stdout": ..., "error": ..., "memory_exceeded": ...}``).
+('{"code": ...}') and answers one JSON line per execution on stdout
+('{"stdout": ..., "error": ..., "memory_exceeded": ...}').
 """
 
 import builtins
@@ -41,6 +41,8 @@ def main() -> None:
     sent to the parent.
     """
     config = json.loads(sys.argv[1])
+    list_tools = sys.argv[2]
+    # print(list_tools)
     real_builtins = vars(builtins)
     real_open = builtins.open
     real_import = builtins.__import__
@@ -99,6 +101,7 @@ def main() -> None:
 
     builtins_dict_copy["open"] = check_access_files
     builtins_dict_copy["__import__"] = check_import
+    builtins_dict_copy["list_tools"] = list_tools
 
     globals_values = {"__builtins__": builtins_dict_copy}
 

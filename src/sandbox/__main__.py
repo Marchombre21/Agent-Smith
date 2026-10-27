@@ -51,22 +51,32 @@ def _run() -> None:
         SandboxError: If the sandbox cannot be started.
     """
     parser = ArgumentParser()
+    group = parser.add_mutually_exclusive_group()
     parser.add_argument(
         "sand_template",
         help="JSON file for sandbox configuration",
         nargs="?",
         default=None,
     )
-    parser.add_argument(
+    group.add_argument(
         "--mcp-stdio",
         help="command line to launch mcp_tools (mbpp or swebench) file",
         type=str,
     )
-    parser.add_argument("--mcp-server", help="URL toward mcp server", type=str)
+    group.add_argument("--mcp-server", help="URL toward mcp server", type=str)
     args = parser.parse_args()
+
+    transport, address = None, None
+
+    if args.mcp_server:
+        transport, address = "http", args.mcp_server
+
+    if args.mcp_stdio:
+        transport, address = "stdio", args.mcp_stdio
     config: SandboxConfig = load_config(args.sand_template)
 
-    with Sandbox(config=config) as sandbox:
+    with Sandbox(config=config, transport=transport,
+                 address=address) as sandbox:
         try:
             run_repl(sandbox)
         except KeyboardInterrupt:

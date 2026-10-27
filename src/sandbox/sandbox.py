@@ -8,6 +8,8 @@ from src.models import SandboxConfig
 from pathlib import Path
 from resource import RLIMIT_AS, setrlimit
 from subprocess import PIPE, Popen, TimeoutExpired
+from src.sandbox.mcp_client import MCPClient
+from mcp_types import Tool
 
 
 class Sandbox(SandboxPort):
@@ -20,11 +22,17 @@ class Sandbox(SandboxPort):
         with Sandbox(config) as sandbox:
             result = sandbox.execute("print(1 + 1)")
     """
-    def __init__(self, config: SandboxConfig) -> None:
+
+    def __init__(self, config: SandboxConfig, transport: str | None,
+                 address: str | None) -> None:
         self.config = config
         self.max_time = config.max_execution_time_seconds
         self.memory = config.max_memory_mb
         self.proc: Popen[str] | None = None
+        self.client: MCPClient | None = None
+        self.list_tools: list[Tool] | [] = []
+        if transport and address:
+            self.client = MCPClient(transport=transport, address=address)
 
     def start(self) -> None:
         """Start the worker process that will execute the submitted code.
@@ -35,12 +43,19 @@ class Sandbox(SandboxPort):
         Raises:
             SandboxError: If the worker script cannot be found.
         """
+        # À modifier: Mettre dans __enter__
+        if self.client and len(self.list_tools) != 0:
+            self.client.connect()
+            self.list_tools = self.client.get_tools()
         worker = Path(__file__).parent / "worker.py"
         if not worker.exists():
             raise SandboxError(f"Worker not found: {worker}")
         max_mem_mo = self.memory * 1024 * 1024
+        names_list: str = json.dumps([tool.name for tool in self.list_tools])
+
         self.proc = Popen(
-            [sys.executable, "-I", worker, self.config.model_dump_json()],
+            [sys.executable, "-I", worker,
+             self.config.model_dump_json(), names_list],
             stdin=PIPE,
             stdout=PIPE,
             text=True,
@@ -48,9 +63,9 @@ class Sandbox(SandboxPort):
             preexec_fn=lambda: setrlimit(RLIMIT_AS, (max_mem_mo, max_mem_mo)),
         )
 
-    def execute(
-        self, code: str, timeout: float | None = None
-    ) -> ExecutionResult:
+    def execute(self,
+                code: str,
+                timeout: float | None = None) -> ExecutionResult:
         """Execute code in the worker process (see ``SandboxPort.execute``).
 
         The code is sent to the worker, then the sandbox waits for its
@@ -72,9 +87,8 @@ class Sandbox(SandboxPort):
             SandboxError: If the sandbox is not started.
         """
         _, stdin, stdout = self._pipes
-        limit = (
-            self.max_time if timeout is None else min(timeout, self.max_time)
-        )
+        limit = (self.max_time if timeout is None else min(
+            timeout, self.max_time))
         stdin.write(json.dumps({"code": code}) + "\n")
         stdin.flush()
 
@@ -95,12 +109,10 @@ class Sandbox(SandboxPort):
             )
 
         answer = json.loads(brut_answer)
-        return ExecutionResult(
-            stdout=answer["stdout"],
-            error=answer["error"],
-            memory_exceeded=answer["memory_exceeded"],
-            final_answer=answer["answer"]
-        )
+        return ExecutionResult(stdout=answer["stdout"],
+                               error=answer["error"],
+                               memory_exceeded=answer["memory_exceeded"],
+                               final_answer=answer["answer"])
 
     def __enter__(self) -> "Sandbox":
         """Start the worker when entering a ``with`` block.
@@ -122,17 +134,18 @@ class Sandbox(SandboxPort):
     @property
     def _pipes(self) -> tuple[Popen[str], IO[str], IO[str]]:
         """Return the running worker and its pipes, or raise if not started."""
-        if (
-            self.proc is None
-            or self.proc.stdin is None
-            or self.proc.stdout is None
-        ):
+        if (self.proc is None or self.proc.stdin is None
+                or self.proc.stdout is None):
             raise SandboxError("Sandbox is not started")
         return self.proc, self.proc.stdin, self.proc.stdout
 
     def close(self) -> None:
         """Close the worker properly.
         """
+
+        # À modifier: Mettre dans __exit__
+        if self.client is not None:
+            self.client.close()
         if self.proc is None:
             return
         if self.proc.stdin is not None:
