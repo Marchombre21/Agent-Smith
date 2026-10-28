@@ -158,7 +158,8 @@ class Sandbox(SandboxPort):
                 try:
                     response = self.client.call_tool(name=name, args=arguments)
 
-                # If ServerMCPError is raised, it must raise until parent,
+                # I except just ToolExecutionError because
+                # if ServerMCPError is raised, it must raise until parent,
                 # since it's a SandboxError
                 except ToolExecutionError as e:
                     return {"result": None, "error": str(e)}
