@@ -1,5 +1,6 @@
 import json
 import sys
+from typing import Literal
 from json import JSONDecodeError
 from argparse import ArgumentParser
 from src.sandbox.sandbox import Sandbox
@@ -66,7 +67,8 @@ def _run() -> None:
     group.add_argument("--mcp-server", help="URL toward mcp server", type=str)
     args = parser.parse_args()
 
-    transport, address = None, None
+    transport: Literal['stdio', 'http'] | None = None
+    address: str | None = None
 
     if args.mcp_server:
         transport, address = "http", args.mcp_server

@@ -6,12 +6,14 @@ from fastmcp import Client
 from fastmcp.client import StdioTransport
 from fastmcp.exceptions import ToolError
 from mcp_types import Tool
-from fastmcp.client.client import CallToolResult
-from src.sandbox.errors import TransportSTDIOError, ServerMCPError, \
-    ToolExecutionError
+from src.sandbox.errors import (
+    TransportSTDIOError,
+    ServerMCPError,
+    ToolExecutionError,
+)
 
 
-class MCPClient():
+class MCPClient:
     """Init, connect and call tools af an MCP server. When it's done, close it
     gracefully.
     """
@@ -38,7 +40,8 @@ class MCPClient():
                 cmd_parts = shlex.split(self.address)
                 if len(cmd_parts) == 0 or cmd_parts[0].strip() == "":
                     raise TransportSTDIOError(
-                        "The command to start the MCP server is missing")
+                        "The command to start the MCP server is missing"
+                    )
                 cmd_args = cmd_parts[1:]
                 params = StdioTransport(command=cmd_parts[0], args=cmd_args)
                 return Client(params)
@@ -49,6 +52,7 @@ class MCPClient():
     def _get_client(self) -> Client:
         if self.client:
             return self.client
+        raise ServerMCPError("The MCP server isn't connected")
 
     def connect(self) -> None:
         """Try to connect the client to the server.
@@ -62,7 +66,8 @@ class MCPClient():
             self.loop.run_until_complete(client.__aenter__())
         except Exception as e:
             raise ServerMCPError(
-                f"Cannot connect to the MCP server: {e}") from e
+                f"Cannot connect to the MCP server: {e}"
+            ) from e
 
     def get_tools(self) -> list[Tool]:
         """Retrieve all tools available on the server."""
@@ -72,7 +77,7 @@ class MCPClient():
         except Exception as e:
             raise ServerMCPError(f"Tool failed: {e}") from e
 
-    def call_tools(self, name: str, args: dict[str, Any]) -> CallToolResult:
+    def call_tool(self, name: str, args: dict[str, Any]) -> str | Any:
         """Call a tool on the server.
 
         Args:
@@ -80,30 +85,34 @@ class MCPClient():
             args (dict[str, Any]): Args to add to the tool execution
 
         Returns:
-            CallToolResult: The result of the tool execution
+            str | Any: The result of the tool execution
         """
         client = self._get_client
         try:
-            return self.loop.run_until_complete(
-                client.call_tool(name=name, arguments=args))
+            result = self.loop.run_until_complete(
+                client.call_tool(name=name, arguments=args)
+            )
+            if result.data is not None:
+                return result.data
+            else:
+                return "\n".join(
+                    c.text for c in result.content if hasattr(c, "text")
+                )
         except ToolError as e:
             raise ToolExecutionError(f"Call tools failed: {e}") from e
         except Exception as e:
             raise ServerMCPError(
-                f"MCP server failed during tool execution: {e}") from e
+                f"MCP server failed during tool execution: {e}"
+            ) from e
 
     def close(self) -> None:
-        """Close the client and the loop properly.
-        """
+        """Close the client and the loop properly."""
         if self.client is None:
             return
         try:
-            if self.client is not None:
-                self.loop.run_until_complete(self.client.close())
+            self.loop.run_until_complete(self.client.close())
         except Exception:
             pass
         finally:
             self.client = None
             self.loop.close()
-            if self.loop is not None:
-                self.loop = None

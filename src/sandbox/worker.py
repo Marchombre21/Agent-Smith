@@ -14,7 +14,12 @@ import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import ModuleType
-from typing import Any, IO, Mapping, Sequence, NoReturn
+from typing import Any, IO, Mapping, Sequence, NoReturn, TextIO, Callable
+
+
+class ToolCallError(Exception):
+    """Raised when an error occured in MCP server during code execution.
+    """
 
 
 class FinalAnswerSignal(BaseException):
@@ -31,6 +36,22 @@ def final_answer(code: Any) -> NoReturn:
     raise FinalAnswerSignal(code)
 
 
+def make_tool(name: str, stdout: TextIO | Any) -> Callable[..., Any]:
+    def tool(*args: Any, **kwargs: Any) -> Any:
+        stdout.write(
+            json.dumps(
+                {"tool_call": name, "args": list(args), "kwargs": kwargs}
+            )
+            + "\n"
+        )
+        stdout.flush()
+        answer = json.loads(sys.stdin.readline())
+        if answer["error"] is not None:
+            raise ToolCallError(answer["error"])
+        return answer["result"]
+    return tool
+
+
 def main() -> None:
     """Run the execution loop of the worker.
 
@@ -41,8 +62,8 @@ def main() -> None:
     sent to the parent.
     """
     config = json.loads(sys.argv[1])
-    list_tools = sys.argv[2]
-    # print(list_tools)
+    real_stdout = sys.stdout
+    list_tools = json.loads(sys.argv[2])
     real_builtins = vars(builtins)
     real_open = builtins.open
     real_import = builtins.__import__
@@ -101,7 +122,9 @@ def main() -> None:
 
     builtins_dict_copy["open"] = check_access_files
     builtins_dict_copy["__import__"] = check_import
-    builtins_dict_copy["list_tools"] = list_tools
+
+    for name in list_tools:
+        builtins_dict_copy[name] = make_tool(name, real_stdout)
 
     globals_values = {"__builtins__": builtins_dict_copy}
 
