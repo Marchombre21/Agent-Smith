@@ -10,7 +10,7 @@ from pathlib import Path
 from resource import RLIMIT_AS, setrlimit
 from subprocess import PIPE, Popen, TimeoutExpired
 from src.sandbox.mcp_client import MCPClient
-from mcp_types import Tool
+from mcp.types import Tool
 from src.sandbox.errors import ToolExecutionError
 
 
@@ -228,4 +228,5 @@ class Sandbox(SandboxPort):
         return proc.returncode
 
     def manual(self) -> str:
+
         return "No tools available"
