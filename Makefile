@@ -2,7 +2,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python3
 UV := uv
 PROG := main.py
-SRCFILES := main.py src/
+SRCFILES := main.py src/ agent_mbpp/
 
 help:
 	@echo "Available commands:"

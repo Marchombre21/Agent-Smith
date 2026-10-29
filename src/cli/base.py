@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable, Literal, Optional, Sequence
 
 import httpx
+from pydantic import ValidationError
 
 from src.cli.models import AgentSettings
 from src.cli.task import BenchmarkTask
@@ -34,6 +35,8 @@ class BenchmarkCli(ABC):
     itself (``BenchmarkTask``) knows its prompt and how to conclude.
     """
 
+    _PROVIDERS_FILE = Path("configs/providers.json")
+
     def __init__(
         self,
         settings: AgentSettings,
@@ -58,6 +61,39 @@ class BenchmarkCli(ABC):
         self._http = http
         self._started_at = started_at
         self._clock = clock
+
+    @classmethod
+    def launch(
+        cls,
+        settings_path: Path,
+        started_at: float,
+        argv: Optional[Sequence[str]] = None,
+    ) -> int:
+        """Build the CLI from the configuration files and run it.
+
+        Paths are relative to the current directory: the moulinette runs
+        the agent from the root of the repository.
+
+        Args:
+            settings_path: Settings of this agent (``configs/agent_*.json``).
+            started_at: ``time.monotonic()`` taken before the imports, by
+                ``__main__`` (design C).
+            argv: Options without the program name; None reads
+                ``sys.argv``.
+
+        Returns:
+            The exit code of ``main``; 1 if the configuration cannot be
+            loaded, since nothing can be solved without it.
+        """
+        try:
+            settings = AgentSettings.from_file(settings_path)
+            registry = ProviderRegistry.from_file(cls._PROVIDERS_FILE)
+        except (OSError, ValidationError, ValueError) as error:
+            print(f"cannot load the agent configuration: {error}",
+                  file=sys.stderr)
+            return 1
+        with httpx.Client() as http:
+            return cls(settings, registry, http, started_at).main(argv)
 
     def main(self, argv: Optional[Sequence[str]] = None) -> int:
         """Solve one task and write ``solution.json`` (design B).
