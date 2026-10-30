@@ -30,8 +30,9 @@ class ChatCompletionsApi:
     """
 
     _log = logging.getLogger(__name__)
-    # Rough ratio used only when a provider omits "usage".
-    _CHARS_PER_TOKEN = 4
+    # Rough ratio used only when "usage" is missing or impossible. 3 rather
+    # than 4: measured 3.0-3.8, and overestimating protects the budget.
+    _CHARS_PER_TOKEN = 3
     # Length of the response body quoted in error messages.
     _BODY_EXCERPT = 300
 
@@ -231,9 +232,7 @@ class ChatCompletionsApi:
     ) -> LLMResponse:
         """Turn a successful response body into an ``LLMResponse``.
 
-        When the provider omits ``usage``, token counts are estimated from
-        text length and a warning is logged, rather than reporting 0 and
-        letting the task overrun its token limits unnoticed.
+        Token counts come from ``_token_counts``.
 
         Raises:
             ProviderError: The body is not the expected JSON (some
@@ -247,23 +246,9 @@ class ChatCompletionsApi:
                 f"{self._provider.name}: unexpected response body: "
                 f"{response.text[: self._BODY_EXCERPT]}"
             ) from exc
-        usage = data.get("usage") or {}
-        input_tokens = usage.get("prompt_tokens")
-        output_tokens = usage.get("completion_tokens")
-        if not isinstance(input_tokens, int) or not isinstance(
-            output_tokens, int
-        ):
-            self._log.warning(
-                "%s: no token usage in response, estimating",
-                self._provider.name,
-            )
-            prompt_chars = sum(len(message.content) for message in messages)
-            input_tokens = prompt_chars // self._CHARS_PER_TOKEN
-            output_tokens = len(text) // self._CHARS_PER_TOKEN
-        else:
-            total = usage.get("total_tokens")
-            if isinstance(total, int):
-                output_tokens = max(output_tokens, total - input_tokens)
+        input_tokens, output_tokens = self._token_counts(
+            data.get("usage") or {}, text, messages
+        )
         model = data.get("model")
         return LLMResponse(
             text=text,
@@ -274,3 +259,56 @@ class ChatCompletionsApi:
             api_url=self._provider.base_url,
             model_name=model if isinstance(model, str) else self._model_name,
         )
+
+    def _token_counts(
+        self,
+        usage: dict[str, Any],
+        text: str,
+        messages: Sequence[Message],
+    ) -> tuple[int, int]:
+        """Return ``(input_tokens, output_tokens)`` for one response.
+
+        The provider's figures are kept whenever they are plausible, and
+        only ever raised: hidden reasoning that is counted in
+        ``total_tokens`` alone is added to the output. They are replaced
+        by an estimate from text length, with a warning, in two cases:
+
+        - ``usage`` is missing or not made of integers;
+        - the output is 0 although text came back. Gemini does this when
+          it filters a native function call the model attempted
+          (``finish_reason`` ``MALFORMED_FUNCTION_CALL``). The tokens of
+          the filtered call are lost, so the estimate is a lower bound.
+
+        Reporting 0 instead would let the task overrun its token limits
+        unnoticed and make ``solution.json`` lie.
+
+        Args:
+            usage: The ``usage`` object of the body, ``{}`` if absent.
+            text: The generated text.
+            messages: The conversation sent, to estimate the input.
+        """
+        input_tokens = usage.get("prompt_tokens")
+        output_tokens = usage.get("completion_tokens")
+        if not isinstance(input_tokens, int) or not isinstance(
+            output_tokens, int
+        ):
+            self._log.warning(
+                "%s: no token usage in response, estimating",
+                self._provider.name,
+            )
+            prompt_chars = sum(len(message.content) for message in messages)
+            return (
+                prompt_chars // self._CHARS_PER_TOKEN,
+                len(text) // self._CHARS_PER_TOKEN,
+            )
+        total = usage.get("total_tokens")
+        if isinstance(total, int):
+            output_tokens = max(output_tokens, total - input_tokens)
+        if output_tokens == 0 and text:
+            self._log.warning(
+                "%s: 0 output tokens reported for %d characters, estimating",
+                self._provider.name,
+                len(text),
+            )
+            output_tokens = max(1, len(text) // self._CHARS_PER_TOKEN)
+        return input_tokens, output_tokens
