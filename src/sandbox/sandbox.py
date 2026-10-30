@@ -75,13 +75,13 @@ class Sandbox(SandboxPort):
     def execute(self,
                 code: str,
                 timeout: float | None = None) -> ExecutionResult:
-        """Execute code in the worker process (see ``SandboxPort.execute``).
+        """Execute code in the worker process (see "SandboxPort.execute").
 
         The code is sent to the worker, then the sandbox waits for its
-        answer for at most the smaller of ``timeout`` and the configured
+        answer for at most the smaller of "timeout" and the configured
         time limit. If the time limit is exceeded, the worker is killed;
         if it died, or was killed, a new one is started and the result
-        reports ``state_reset``.
+        reports "state_reset".
 
         Args:
             code: Python source to execute.
@@ -90,7 +90,8 @@ class Sandbox(SandboxPort):
 
         Returns:
             What happened during the execution. Errors of the code itself
-            are reported in it, never raised.
+            are reported in it, never raised except KeyboardInterrupt and
+            SystemExit.
 
         Raises:
             SandboxError: If the sandbox is not started.
@@ -129,6 +130,11 @@ class Sandbox(SandboxPort):
                 limit += time.monotonic() - start
                 continue
 
+            if answer["interrupt"] is not None:
+                if answer["interrupt"] == "KeyboardInterrupt":
+                    raise KeyboardInterrupt
+                else:
+                    raise SystemExit(answer["exit_code"])
             return ExecutionResult(
                 stdout=answer["stdout"],
                 error=answer["error"],
@@ -167,10 +173,10 @@ class Sandbox(SandboxPort):
         return {"result": None, "error": f"Unknown tool {name}"}
 
     def __enter__(self) -> "Sandbox":
-        """Start the worker when entering a ``with`` block.
+        """Start the worker when entering a "with" block.
 
         Returns:
-            The sandbox itself, bound by ``with ... as``.
+            The sandbox itself, bound by "with ... as".
         """
 
         if self.client is not None:
@@ -180,7 +186,7 @@ class Sandbox(SandboxPort):
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        """Close the worker when leaving a ``with`` block.
+        """Close the worker when leaving a "with" block.
 
         Called even if an exception was raised; the exception is not
         suppressed, so that it reaches the caller.

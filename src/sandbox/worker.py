@@ -36,19 +36,29 @@ def final_answer(code: Any) -> NoReturn:
     raise FinalAnswerSignal(code)
 
 
+def my_exit(code: object = None) -> NoReturn:
+    """Replace real exit and quit functions builtins because these functions
+    close the stdin before raise SystemExit. Then the worker crash when
+    readline().
+    """
+    raise SystemExit(code)
+
+
 def make_tool(name: str, stdout: TextIO | Any) -> Callable[..., Any]:
+
     def tool(*args: Any, **kwargs: Any) -> Any:
         stdout.write(
-            json.dumps(
-                {"tool_call": name, "args": list(args), "kwargs": kwargs}
-            )
-            + "\n"
-        )
+            json.dumps({
+                "tool_call": name,
+                "args": list(args),
+                "kwargs": kwargs
+            }) + "\n")
         stdout.flush()
         answer = json.loads(sys.stdin.readline())
         if answer["error"] is not None:
             raise ToolCallError(answer["error"])
         return answer["result"]
+
     return tool
 
 
@@ -71,11 +81,11 @@ def main() -> None:
     builtins_dict_copy["final_answer"] = final_answer
 
     def check_import(
-        name: str,
-        globals: Mapping[str, object] | None = None,
-        locals: Mapping[str, object] | None = None,
-        fromlist: Sequence[str] | None = (),
-        level: int = 0,
+            name: str,
+            globals: Mapping[str, object] | None = None,
+            locals: Mapping[str, object] | None = None,
+            fromlist: Sequence[str] | None = (),
+            level: int = 0,
     ) -> ModuleType:
         """Import a module only if it is in the authorized imports.
 
@@ -94,9 +104,8 @@ def main() -> None:
         authorized = config["authorized_imports"]
         if name not in authorized and pattern not in authorized:
             raise ImportError(f"Import of '{name}' is not allowed")
-        module: ModuleType = real_import(
-            name, globals, locals, fromlist, level
-        )
+        module: ModuleType = real_import(name, globals, locals, fromlist,
+                                         level)
         return module
 
     def check_access_files(path: str, *args: Any, **kwargs: Any) -> IO[Any]:
@@ -122,6 +131,8 @@ def main() -> None:
 
     builtins_dict_copy["open"] = check_access_files
     builtins_dict_copy["__import__"] = check_import
+    builtins_dict_copy["exit"] = my_exit
+    builtins_dict_copy["quit"] = my_exit
 
     for name in list_tools:
         builtins_dict_copy[name] = make_tool(name, real_stdout)
@@ -134,10 +145,21 @@ def main() -> None:
             break
         code = json.loads(line)["code"]
         buffer = io.StringIO()
-        error, memory_exceeded, answer = None, False, None
+        error, memory_exceeded, answer, interrupt, exit_code = None, False, \
+            None, None, None
         try:
             with redirect_stdout(buffer):
                 exec(code, globals_values)
+        except KeyboardInterrupt:
+            interrupt = "KeyboardInterrupt"
+        except SystemExit as e:
+            interrupt = "SystemExit"
+            if e.code is None:
+                exit_code = None
+            elif isinstance(e.code, int):
+                exit_code = e.code
+            else:
+                exit_code = 1
         except MemoryError:
             error, memory_exceeded = "MemoryError", True
         except FinalAnswerSignal as e:
@@ -148,16 +170,14 @@ def main() -> None:
             tb = e.__traceback__.tb_next if e.__traceback__ else None
             error = "".join(traceback.format_exception(type(e), e, tb))
         sys.stdout.write(
-            json.dumps(
-                {
-                    "stdout": buffer.getvalue(),
-                    "error": error,
-                    "memory_exceeded": memory_exceeded,
-                    "answer": answer
-                }
-            )
-            + "\n"
-        )
+            json.dumps({
+                "stdout": buffer.getvalue(),
+                "error": error,
+                "memory_exceeded": memory_exceeded,
+                "answer": answer,
+                "interrupt": interrupt,
+                "exit_code": exit_code
+            }) + "\n")
         sys.stdout.flush()
 
 
