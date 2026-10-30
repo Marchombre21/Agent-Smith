@@ -1,5 +1,6 @@
 {
     "authorized_imports": [
+        "math", "math.*",
         "collections", "collections.*",
         "itertools", "re", "json",
         "typing", "typing.*",
