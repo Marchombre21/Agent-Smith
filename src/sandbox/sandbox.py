@@ -10,8 +10,9 @@ from pathlib import Path
 from resource import RLIMIT_AS, setrlimit
 from subprocess import PIPE, Popen, TimeoutExpired
 from src.sandbox.mcp_client import MCPClient
-from mcp_types import Tool
+from mcp.types import Tool
 from src.sandbox.errors import ToolExecutionError
+from src.sandbox.manual import ManualMaker
 
 
 class Sandbox(SandboxPort):
@@ -55,8 +56,7 @@ class Sandbox(SandboxPort):
             raise SandboxError(f"Worker not found: {worker}")
         max_mem_mo = self.memory * 1024 * 1024
         names_list: str = json.dumps([tool.name for tool in self.list_tools])
-        # for tool in self.list_tools:
-        #     print(list(tool.input_schema["properties"]))
+        # print(self.manual())
         self.proc = Popen(
             [
                 sys.executable,
@@ -72,9 +72,9 @@ class Sandbox(SandboxPort):
             preexec_fn=lambda: setrlimit(RLIMIT_AS, (max_mem_mo, max_mem_mo)),
         )
 
-    def execute(
-        self, code: str, timeout: float | None = None
-    ) -> ExecutionResult:
+    def execute(self,
+                code: str,
+                timeout: float | None = None) -> ExecutionResult:
         """Execute code in the worker process (see ``SandboxPort.execute``).
 
         The code is sent to the worker, then the sandbox waits for its
@@ -96,9 +96,8 @@ class Sandbox(SandboxPort):
             SandboxError: If the sandbox is not started.
         """
         _, stdin, stdout = self._pipes
-        limit = (
-            self.max_time if timeout is None else min(timeout, self.max_time)
-        ) + time.monotonic()
+        limit = (self.max_time if timeout is None else min(
+            timeout, self.max_time)) + time.monotonic()
         stdin.write(json.dumps({"code": code}) + "\n")
         stdin.flush()
 
@@ -148,13 +147,14 @@ class Sandbox(SandboxPort):
 
                 if len(params) < len(request["args"]):
                     return {
-                        "result": None,
-                        "error": f"{name}() takes at most"
-                                 f" {len(params)} positional arguments",
+                        "result":
+                        None,
+                        "error":
+                        f"{name}() takes at most"
+                        f" {len(params)} positional arguments",
                     }
-                arguments = (
-                    dict(zip(params, request["args"])) | request["kwargs"]
-                )
+                arguments = (dict(zip(params, request["args"]))
+                             | request["kwargs"])
                 try:
                     response = self.client.call_tool(name=name, args=arguments)
 
@@ -193,11 +193,8 @@ class Sandbox(SandboxPort):
     @property
     def _pipes(self) -> tuple[Popen[str], IO[str], IO[str]]:
         """Return the running worker and its pipes, or raise if not started."""
-        if (
-            self.proc is None
-            or self.proc.stdin is None
-            or self.proc.stdout is None
-        ):
+        if (self.proc is None or self.proc.stdin is None
+                or self.proc.stdout is None):
             raise SandboxError("Sandbox is not started")
         return self.proc, self.proc.stdin, self.proc.stdout
 
@@ -228,4 +225,8 @@ class Sandbox(SandboxPort):
         return proc.returncode
 
     def manual(self) -> str:
-        return "No tools available"
+        """Return a string that describes all availables tools with their
+        signature and description.
+        """
+        manual_maker = ManualMaker(self.list_tools, self.config)
+        return manual_maker.construct()

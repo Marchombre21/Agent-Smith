@@ -5,7 +5,7 @@ from typing import Literal, Any
 from fastmcp import Client
 from fastmcp.client import StdioTransport
 from fastmcp.exceptions import ToolError
-from mcp_types import Tool
+from mcp.types import Tool
 from src.sandbox.errors import (
     TransportSTDIOError,
     ServerMCPError,
