@@ -10,7 +10,13 @@ import httpx
 from src.llm.chat_api import ChatCompletionsApi
 from src.llm.client import LLMClient
 from src.llm.config import ApiKey, ProviderRegistry
-from src.llm.errors import AuthError, LLMError, ProviderError, RateLimitError
+from src.llm.errors import (
+    AuthError,
+    LLMError,
+    NativeToolCallError,
+    ProviderError,
+    RateLimitError,
+)
 from src.llm.key_pool import KeyPool
 from src.llm.models import LLMResponse, Message
 
@@ -181,6 +187,8 @@ class RotatingClient(LLMClient):
         - rate limit: block ``key`` for the advised delay (60 s if none),
           then try the next key at once;
         - refused key: block ``key`` for good, then try the next key;
+        - native tool call without text: same key, at once (a bad draw
+          of the model, not a provider failure: waiting cannot help);
         - provider failure: same key, after a backoff of 1, 2, 4, 8 s...;
         - anything else (bad request): retrying cannot help, re-raise.
 
@@ -206,6 +214,9 @@ class RotatingClient(LLMClient):
             return 0.0
         if isinstance(error, AuthError):
             self._pool.block(key, math.inf)
+            return 0.0
+        # Before ProviderError, its parent class: the first match wins.
+        if isinstance(error, NativeToolCallError):
             return 0.0
         if isinstance(error, ProviderError):
             backoff = self._BACKOFF_BASE * 2.0 ** (attempt - 1)
