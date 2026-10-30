@@ -59,4 +59,4 @@ def run_tests(code: str, test_list: list[str]) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(show_banner=False)
+    mcp.run(show_banner=False, log_level="WARNING")
