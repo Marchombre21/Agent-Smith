@@ -5,7 +5,7 @@ PROG := sandbox
 MCP_CMD ?= python mcp_tools_mbpp.py
 CONFIG ?= configs/sandbox_template.json
 MCP_URL ?= http://localhost:8000/mcp
-SRCFILES := main.py src/ 
+SRCFILES := main.py src/ agent_mbpp/
 
 help:
 	@echo "Available commands:"
@@ -27,7 +27,7 @@ run:
 run-stdio:
 	@$(UV) run $(PROG) --mcp-stdio "$(MCP_CMD)" $(CONFIG)
 
-run-http:
+run-server:
 	@$(UV) run $(PROG) --mcp-server $(MCP_URL) $(CONFIG)
 
 debug:
