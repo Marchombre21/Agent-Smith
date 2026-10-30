@@ -54,6 +54,22 @@ class ProviderError(LLMError):
     """
 
 
+class NativeToolCallError(ProviderError):
+    """The model attempted a native tool call and returned no text.
+
+    The prompt asks for tools to be called from Python code, but some
+    models call them through the API anyway: Gemini filters the call
+    (``finish_reason`` ``MALFORMED_FUNCTION_CALL``) and often sends back
+    no ``content`` at all. Nothing is wrong with the provider or the
+    request: the model drew a bad answer.
+
+    Reaction: try again at once, without the backoff of its parent
+    class; a new draw usually gives a code block. Being a
+    ``ProviderError``, it is still retried, with backoff, by code that
+    does not know this subclass.
+    """
+
+
 class BadRequestError(LLMError):
     """The provider rejected the request itself (400, 404, 422...).
 

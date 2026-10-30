@@ -33,7 +33,9 @@ use native tool or function calls.
 - A value is not shown unless you print it: use print().
 - Variables, functions and imports persist from one step to the next. \
 If an Observation says variables were lost, define them again.
-- Calling final_answer(...) ends the task at once."""
+- Calling final_answer(...) ends the task at once.
+- The functions in <Sandbox_Manual> are already defined in the sandbox: \
+call them inside your ```python block, like any Python function."""
 
     def system_prompt(self, manual: str) -> str:
         """Build the system prompt: framework, method, then the manual.

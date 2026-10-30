@@ -11,6 +11,7 @@ from src.llm.config import ApiKey, ProviderConfig
 from src.llm.errors import (
     AuthError,
     BadRequestError,
+    NativeToolCallError,
     ProviderError,
     RateLimitError,
 )
@@ -235,13 +236,29 @@ class ChatCompletionsApi:
         Token counts come from ``_token_counts``.
 
         Raises:
+            NativeToolCallError: No text came back because the model
+                attempted a native tool call (filtered by Gemini, or
+                passed in ``tool_calls``). Checked before ``content``,
+                which Gemini then leaves out.
             ProviderError: The body is not the expected JSON (some
                 providers answer 200 with an error object).
         """
         try:
             data = response.json()
-            text = data["choices"][0]["message"]["content"] or ""
-        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            choice = data["choices"][0]
+            message = choice["message"]
+            if not message.get("content") and (
+                "MALFORMED_FUNCTION_CALL" in str(choice.get("finish_reason"))
+                or message.get("tool_calls")
+            ):
+                raise NativeToolCallError(
+                    f"{self._provider.name}: native tool call, no text "
+                    f"(finish_reason {choice.get('finish_reason')})"
+                )
+            text = message["content"] or ""
+        except (
+            ValueError, KeyError, IndexError, TypeError, AttributeError
+        ) as exc:
             raise ProviderError(
                 f"{self._provider.name}: unexpected response body: "
                 f"{response.text[: self._BODY_EXCERPT]}"
