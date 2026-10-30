@@ -197,7 +197,7 @@ class BenchmarkCli(ABC):
             failed early (an empty ``task_id`` if even the task could not
             be read).
         """
-        task_id = ""
+        task_id: str = ""
         url: str = args.provider_url or ""
         model: str = args.model_name or ""
         recorder: Optional[StepRecorder] = None
