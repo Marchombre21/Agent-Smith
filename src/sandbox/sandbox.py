@@ -228,5 +228,5 @@ class Sandbox(SandboxPort):
         """Return a string that describes all availables tools with their
         signature and description.
         """
-        self.manual_maker = ManualMaker(self.list_tools, self.config)
-        return self.manual_maker.construct()
+        manual_maker = ManualMaker(self.list_tools, self.config)
+        return manual_maker.construct()

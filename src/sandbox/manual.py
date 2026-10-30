@@ -11,8 +11,7 @@ FINAL_ANSWER = \
     '    """\n\n'
 
 FIRST_INSTRUCTS = \
-    'The variables will be persistent between calls.\n'\
-    'You will see what is printed during execution.\n\n'
+    'The variables will be persistent between calls.\n\n'
 
 
 class ManualMaker():
