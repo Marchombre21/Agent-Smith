@@ -10,15 +10,13 @@ mcp = FastMCP("mcp_tools_mbpp")
 @mcp.tool()
 def run_tests(code: str, test_list: list[str]) -> str:
     '''
-    Execute passed code and test assertions with the result.
+    Execute passed code and test assertions with the result. The function
+    returns a json formatted string with success True/False, a message and an
+    output.
 
     Args:
         code (str): The code to execute.
         test_list (list[str]): List of tests the result code is tested with.
-
-    Returns:
-        str: A json formatted string with success True/False, a message and an
-        output.
     '''
     if len(test_list) == 0:
         return json.dumps(
@@ -61,4 +59,4 @@ def run_tests(code: str, test_list: list[str]) -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(show_banner=False)
+    mcp.run(show_banner=False, log_level="WARNING")
