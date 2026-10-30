@@ -27,7 +27,7 @@ run:
 run-stdio:
 	@$(UV) run $(PROG) --mcp-stdio "$(MCP_CMD)" $(CONFIG)
 
-run-http:
+run-server:
 	@$(UV) run $(PROG) --mcp-server $(MCP_URL) $(CONFIG)
 
 debug:
