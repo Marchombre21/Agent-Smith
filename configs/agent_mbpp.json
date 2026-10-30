@@ -1,0 +1,9 @@
+{
+    "provider": "gemini",
+    "model_name": "gemini-3.5-flash-lite",
+    "max_iterations": 10,
+    "time_margin_seconds": 15,
+    "keep_last_observations": 3,
+    "transport": "stdio",
+    "address": "uv run python mcp_tools_mbpp.py"
+}
