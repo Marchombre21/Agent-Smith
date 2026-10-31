@@ -1,58 +1,72 @@
 import subprocess
-import sys
-import json
-from subprocess import TimeoutExpired
+import os
+from subprocess import CompletedProcess
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
 mcp = FastMCP("mcp_tools_swebench")
 
-# NOTES DE CONCEPTION (30/10, à condenser en anglais avant le rendu)
-#
-# TESTBED_PATH : variable d'environnement = « le dépôt à étudier est ici ».
-#   - Pendant le run de l'agent : le dépôt est dans le conteneur Docker,
-#     toujours à /testbed.
-#   - Pendant le test isolé des tools : la moulinette met le dépôt où elle
-#     veut, règle TESTBED_PATH et démarre ce serveur elle-même. Elle ne
-#     promet RIEN d'autre (pas d'id de conteneur).
-#   => Ne jamais écrire /testbed en dur : toujours partir de TESTBED_PATH.
-#
-# Architecture choisie : sandbox sur l'hôte, les tools passent par
-# 'docker exec' pour agir dans le conteneur.
-#
-# CONTAINER_ID : variable d'environnement donnée par l'agent.
-#   - Présente  -> les commandes tournent dans le conteneur :
-#                  docker exec -w $TESTBED_PATH <id> <commande>
-#   - Absente   -> mode local (cas du test isolé de la moulinette) :
-#                  <commande> lancée avec cwd=$TESTBED_PATH
-#   Lire les deux variables une seule fois, en constantes de module.
-#
-# Comment l'id arrive ici :
-#   Agent -> Sandbox(..., env={"CONTAINER_ID": id, "TESTBED_PATH": "/testbed"})
-#         -> MCPClient(..., env=env) -> StdioTransport(cmd, args, env=env)
-#   PIÈGE (testé) : le SDK MCP ne transmet au serveur que HOME, LOGNAME,
-#   PATH, SHELL, TERM, USER. Un os.environ[...] côté agent n'arrive PAS ici :
-#   il faut passer env= explicitement. (PATH est gardé -> docker trouvé.)
-#   En HTTP (--mcp-server), le client ne peut rien passer : lancer le
-#   serveur avec les variables (CONTAINER_ID=... python mcp_tools_swebench.py)
+TESTBED_PATH = os.environ.get("TESTBED_PATH")
+CONTAINER_ID = os.environ.get("CONTAINER_ID")
+
+if not TESTBED_PATH:
+    raise ValueError("Missing TESTBED_PATH variable to launch MCP server.")
 
 
-# _run : fonction interne (pas de @mcp.tool, donc invisible pour le LLM).
-# Chaque tool construit sa commande, appelle _run, puis formate la sortie ;
-# seul _run sait OÙ la commande s'exécute (conteneur ou local).
-#   - Commande en LISTE, jamais en chaîne avec shell=True : les arguments
-#     viennent du LLM (pattern "x; rm -rf /testbed" = injection).
-#     Seule exception voulue : run_command -> ["bash", "-c", command].
-#   - Paramètres à prévoir : workdir (défaut TESTBED_PATH, pour
-#     run_command), input pour stdin (edit_file : écrire dans le conteneur
-#     via docker exec -i ... sh -c 'cat > fichier'), timeout (run_tests,
-#     run_command).
-#   - Renvoie stdout, stderr, code retour (CompletedProcess les a déjà).
-def _run(cmd: list[str]):
+def _run(cmd: list[str]) -> CompletedProcess:
+    if CONTAINER_ID:
+        final_cmd = ["docker", "exec", "-w", TESTBED_PATH, CONTAINER_ID] + cmd
+        final_cwd = None
+    else:
+        final_cmd = cmd
+        final_cwd = TESTBED_PATH
+    return subprocess.run(
+        final_cmd, text=True, capture_output=True, cwd=final_cwd
+    )
 
 
 @mcp.tool()
-def read_file(file_path: str, start_line: int, end_line: int):
-    cmd: list = ["sed", "-n", f"{start_line}", f"{end_line}p", f"{file_path}"]
+def read_file(filepath: str, start_line: int, end_line: int) -> str:
+    """Read lines start_line to end_line (1-based, inclusive) of a file.
+    Return them as "<line_number>: <line_content>" lines, or a message if
+    the file has fewer lines. Raise an error if the file cannot be read.
+
+    Args:
+        filepath (str): Path of the file to read, absolute or relative to
+            the repository root.
+        start_line (int): First line to read (starts at 1).
+        end_line (int): Last line to read (included).
+
+    Raises:
+        ValueError: If start_line is lower than 1 or greater than end_line.
+        ToolError: If the file cannot be read (e.g. it does not exist).
+    """
+
+    if start_line < 1:
+        raise ValueError("The start_line value cannot be lower than 1.")
+    if start_line > end_line:
+        raise ValueError("The start_line cannot be greater than end_line.")
+    complete_filepath = os.path.join(TESTBED_PATH, filepath)
+    cmd: list[str] = [
+        "sed",
+        "-n",
+        f"{start_line},{end_line}p",
+        "--",
+        complete_filepath,
+    ]
+    result = ""
+    run_return = _run(cmd=cmd)
+    if run_return.returncode != 0:
+        code = run_return.returncode
+        raise ToolError(
+            f"The tool execution failed with code {code}:\n{run_return.stderr}"
+        )
+    response = run_return.stdout.splitlines()
+    for number, line in enumerate(response, start=start_line):
+        result += f"{number}: {line}\n"
+    if result == "":
+        return "No lines in range, file has fewer lines."
+    return result
 
 
 if __name__ == "__main__":

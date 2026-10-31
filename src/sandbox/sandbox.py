@@ -29,8 +29,9 @@ class Sandbox(SandboxPort):
     def __init__(
         self,
         config: SandboxConfig,
-        transport: Literal["stdio", "http"] | None,
-        address: str | None,
+        transport: Literal["stdio", "http"] | None = None,
+        address: str | None = None,
+        env: dict[str, Any] | None = None,
     ) -> None:
         self.config = config
         self.max_time = config.max_execution_time_seconds
@@ -39,7 +40,9 @@ class Sandbox(SandboxPort):
         self.client: MCPClient | None = None
         self.list_tools: list[Tool] = []
         if transport and address:
-            self.client = MCPClient(transport=transport, address=address)
+            self.client = MCPClient(
+                transport=transport, address=address, env=env
+            )
 
     def start(self) -> None:
         """Start the worker process that will execute the submitted code.
@@ -72,9 +75,9 @@ class Sandbox(SandboxPort):
             preexec_fn=lambda: setrlimit(RLIMIT_AS, (max_mem_mo, max_mem_mo)),
         )
 
-    def execute(self,
-                code: str,
-                timeout: float | None = None) -> ExecutionResult:
+    def execute(
+        self, code: str, timeout: float | None = None
+    ) -> ExecutionResult:
         """Execute code in the worker process (see "SandboxPort.execute").
 
         The code is sent to the worker, then the sandbox waits for its
@@ -97,8 +100,9 @@ class Sandbox(SandboxPort):
             SandboxError: If the sandbox is not started.
         """
         _, stdin, stdout = self._pipes
-        limit = (self.max_time if timeout is None else min(
-            timeout, self.max_time)) + time.monotonic()
+        limit = (
+            self.max_time if timeout is None else min(timeout, self.max_time)
+        ) + time.monotonic()
         stdin.write(json.dumps({"code": code}) + "\n")
         stdin.flush()
 
@@ -153,14 +157,13 @@ class Sandbox(SandboxPort):
 
                 if len(params) < len(request["args"]):
                     return {
-                        "result":
-                        None,
-                        "error":
-                        f"{name}() takes at most"
+                        "result": None,
+                        "error": f"{name}() takes at most"
                         f" {len(params)} positional arguments",
                     }
-                arguments = (dict(zip(params, request["args"]))
-                             | request["kwargs"])
+                arguments = (
+                    dict(zip(params, request["args"])) | request["kwargs"]
+                )
                 try:
                     response = self.client.call_tool(name=name, args=arguments)
 
@@ -199,8 +202,11 @@ class Sandbox(SandboxPort):
     @property
     def _pipes(self) -> tuple[Popen[str], IO[str], IO[str]]:
         """Return the running worker and its pipes, or raise if not started."""
-        if (self.proc is None or self.proc.stdin is None
-                or self.proc.stdout is None):
+        if (
+            self.proc is None
+            or self.proc.stdin is None
+            or self.proc.stdout is None
+        ):
             raise SandboxError("Sandbox is not started")
         return self.proc, self.proc.stdin, self.proc.stdout
 

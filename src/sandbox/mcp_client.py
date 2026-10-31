@@ -18,7 +18,12 @@ class MCPClient:
     gracefully.
     """
 
-    def __init__(self, transport: Literal["stdio", "http"], address: str):
+    def __init__(
+        self,
+        transport: Literal["stdio", "http"],
+        address: str,
+        env: dict[str, Any] | None,
+    ):
         """Init the MCP client by creating the async loop used to call mcp
         server's methods and connect with it by the asked transport
 
@@ -27,9 +32,12 @@ class MCPClient:
             wanted transport way (http or stdio)
             address (str): Whether the command to launch the server by stdio or
             the URL to connect http server
+            env (dict[str, str] | None): Environment variables passed to the
+            stdio server process.
         """
         self.transport: Literal["stdio", "http"] = transport
         self.address: str = address
+        self.env = env
         self.loop: AbstractEventLoop = asyncio.new_event_loop()
         self.client: Client | None = self._create_client()
 
@@ -43,7 +51,11 @@ class MCPClient:
                         "The command to start the MCP server is missing"
                     )
                 cmd_args = cmd_parts[1:]
-                params = StdioTransport(command=cmd_parts[0], args=cmd_args)
+                params = StdioTransport(
+                    command=cmd_parts[0],
+                    args=cmd_args,
+                    env=self.env,
+                )
                 return Client(params)
             case "http":
                 return Client(self.address)

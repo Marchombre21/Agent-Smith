@@ -1,5 +1,6 @@
 import json
 import sys
+import os
 from typing import Literal
 from json import JSONDecodeError
 from argparse import ArgumentParser
@@ -77,8 +78,16 @@ def _run() -> None:
         transport, address = "stdio", args.mcp_stdio
     config: SandboxConfig = load_config(args.sand_template)
 
+    env = {}
+    env_vars = ["TESTBED_PATH", "CONTAINER_ID"]
+
+    for var in env_vars:
+        temp_var = os.environ.get(var)
+        if temp_var:
+            env[var] = temp_var
+
     with Sandbox(config=config, transport=transport,
-                 address=address) as sandbox:
+                 address=address, env=env) as sandbox:
         try:
             run_repl(sandbox)
         except KeyboardInterrupt:
