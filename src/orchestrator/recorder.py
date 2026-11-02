@@ -42,6 +42,17 @@ class StepRecorder:
         self._api_url = api_url
         self._model_name = model_name
         self._steps: List[StepMetrics] = []
+        self._system_prompt = ""
+
+    def set_system_prompt(self, system_prompt: str) -> None:
+        """Keep the full system prompt sent to the LLM, for the output.
+
+        Kept here as soon as it is built, rather than passed to
+        ``finish``: a run that stops on an error (or SIGTERM) after
+        that point still writes it, as ``display`` warns about an empty
+        one.
+        """
+        self._system_prompt = system_prompt
 
     def record(
         self,
@@ -103,20 +114,20 @@ class StepRecorder:
         self,
         success: bool,
         solution: str,
-        system_prompt: str,
         total_time_seconds: float,
         error: Optional[str] = None,
     ) -> SolutionOutput:
         """Build the output of the task from the steps recorded.
 
         Totals are computed from the steps themselves, so the output is
-        consistent with its ``steps`` whatever happened in the loop.
+        consistent with its ``steps`` whatever happened in the loop. The
+        system prompt is the one given to ``set_system_prompt``, empty if
+        the run stopped before it was built.
 
         Args:
             success: Whether the agent believes it solved the task.
             solution: MBPP function code, or SWE-bench patch; may be
                 empty when the task failed.
-            system_prompt: Full system prompt sent to the LLM.
             total_time_seconds: Time since the process started.
             error: Why the task stopped without success; None otherwise.
         """
@@ -126,12 +137,12 @@ class StepRecorder:
             success=success,
             solution=solution,
             iterations=len(self._steps),
-            # Each step is one successful request plus its failed tries.
+            # Each step is one request plus its failed tries.
             total_requests=sum(1 + s.retries for s in self._steps),
             total_input_tokens=sum(s.input_tokens for s in self._steps),
             total_output_tokens=sum(s.output_tokens for s in self._steps),
             total_time_seconds=total_time_seconds,
             steps=list(self._steps),
-            system_prompt=system_prompt,
+            system_prompt=self._system_prompt,
             error=error,
         )

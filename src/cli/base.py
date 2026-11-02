@@ -225,7 +225,6 @@ class BenchmarkCli(ABC):
             return recorder.finish(
                 success=False,
                 solution="",
-                system_prompt="",
                 total_time_seconds=self._clock() - self._started_at,
                 error=f"{type(error).__name__}: {error}",
             )
@@ -261,6 +260,7 @@ class BenchmarkCli(ABC):
         prompt = task.prompt()
         with self._open_sandbox() as sandbox:
             system_prompt = prompt.system_prompt(sandbox.manual())
+            recorder.set_system_prompt(system_prompt)
             conversation = Conversation(
                 system_prompt,
                 prompt.task_message(),
@@ -280,7 +280,6 @@ class BenchmarkCli(ABC):
         return recorder.finish(
             success=success,
             solution=solution,
-            system_prompt=system_prompt,
             total_time_seconds=budget.elapsed_seconds,
             error=result.error,
         )
