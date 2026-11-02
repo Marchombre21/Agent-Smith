@@ -39,9 +39,9 @@ class MCPClient:
         self.address: str = address
         self.env = env
         self.loop: AbstractEventLoop = asyncio.new_event_loop()
-        self.client: Client | None = self._create_client()
+        self.client: Client[Any] | None = self._create_client()
 
-    def _create_client(self) -> Client:
+    def _create_client(self) -> Client[Any]:
         """Create client instance with wanted transport way."""
         match self.transport:
             case "stdio":
@@ -61,7 +61,7 @@ class MCPClient:
                 return Client(self.address)
 
     @property
-    def _get_client(self) -> Client:
+    def _get_client(self) -> Client[Any]:
         if self.client:
             return self.client
         raise ServerMCPError("The MCP server isn't connected")

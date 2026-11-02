@@ -146,14 +146,14 @@ class Sandbox(SandboxPort):
                 final_answer=answer["answer"],
             )
 
-    def _handle_call_tool(self, request: dict) -> dict[str, Any]:
+    def _handle_call_tool(self, request: dict[str, Any]) -> dict[str, Any]:
 
         if self.client is None:
             raise SandboxError("MCP server isn't connected")
         name = request["tool_call"]
         for tool in self.list_tools:
             if tool.name == name:
-                params: list = list(tool.input_schema["properties"])
+                params: list[str] = list(tool.input_schema["properties"])
 
                 if len(params) < len(request["args"]):
                     return {
