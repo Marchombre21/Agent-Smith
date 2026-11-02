@@ -276,7 +276,9 @@ class BenchmarkCli(ABC):
                 recorder=recorder,
             )
             result = loop.run()
-            success, solution = task.conclude(result, sandbox)
+            success, solution = task.conclude(
+                result, sandbox, budget.remaining_seconds
+            )
         return recorder.finish(
             success=success,
             solution=solution,
@@ -331,4 +333,3 @@ class BenchmarkCli(ABC):
     @abstractmethod
     def _limits(self) -> TaskLimits:
         """Return the limits of the task, from the settings."""
-            # Set from outside Python: the default is the closest match.
