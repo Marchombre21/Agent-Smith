@@ -2,6 +2,7 @@
 
 from typing import List, Literal, Optional
 
+from src.llm.errors import LLMCallFailed
 from src.llm.models import LLMResponse
 from src.models import SolutionOutput, StepMetrics
 
@@ -9,8 +10,10 @@ from src.models import SolutionOutput, StepMetrics
 class StepRecorder:
     """Write one ``StepMetrics`` per step, then the ``SolutionOutput``.
 
-    A step is one successful LLM call and at most one execution. Its
-    metrics are created when the step ends, so their timestamps grow
+    A step is one LLM call and at most one execution. A call that got
+    no answer is a step too, with nothing run: its requests and tokens
+    were spent, and the totals must show them. Its metrics are created
+    when the step ends, so their timestamps grow
     from one step to the next, as ``display`` checks.
     """
 
@@ -67,6 +70,31 @@ class StepRecorder:
             sandbox_input=code if code is not None else "",
             sandbox_output=observation if code is not None else "",
             retries=response.retries,
+        )
+        self._steps.append(metrics)
+        return metrics
+
+    def record_failure(self, failure: LLMCallFailed) -> StepMetrics:
+        """Record a step whose LLM call got no answer, and return it.
+
+        Nothing was run, so ``sandbox_input`` and ``sandbox_output`` are
+        empty (the subject allows it); ``llm_output`` says why, since
+        ``display`` warns about an empty one.
+
+        Args:
+            failure: The error of the call, with what its requests cost.
+        """
+        metrics = StepMetrics(
+            step=len(self._steps) + 1,
+            input_tokens=failure.input_tokens,
+            output_tokens=failure.output_tokens,
+            request_time_ms=failure.request_time_ms,
+            api_url=self._api_url,
+            model_name=self._model_name,
+            llm_output=(
+                f"(no answer: LLM call failed, requests: {failure.attempts})"
+            ),
+            retries=failure.attempts - 1,
         )
         self._steps.append(metrics)
         return metrics
