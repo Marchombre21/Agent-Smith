@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from src.cli.models import AgentSettings
 from src.cli.task import BenchmarkTask
+from src.cli.termination import TerminationGuard, TerminationRequested
 from src.extraction.chain import CodeExtraction
 from src.llm.config import ProviderRegistry
 from src.llm.rotating_client import RotatingClient
@@ -102,6 +103,10 @@ class BenchmarkCli(ABC):
             argv: Options without the program name; None reads
                 ``sys.argv``.
 
+        The task runs under a ``TerminationGuard``: the moulinette's
+        SIGTERM at its time limit stops it, and what is known is still
+        written.
+
         Returns:
             0 once the file is written, whatever the outcome of the
             task; 1 if the file cannot be written, the only failure the
@@ -112,7 +117,8 @@ class BenchmarkCli(ABC):
                 argparse): without ``--output`` there is nowhere to write.
         """
         args = self._parse_args(argv)
-        output = self._solve(args)
+        with TerminationGuard():
+            output = self._solve(args)
         try:
             self._write(output, args.output)
         except OSError as error:
@@ -188,6 +194,10 @@ class BenchmarkCli(ABC):
         always written. The steps already recorded are kept.
         ``KeyboardInterrupt`` and ``SystemExit`` are not ``Exception``
         subclasses: they go through, as the subject requires.
+        ``TerminationRequested`` (SIGTERM, see ``TerminationGuard``) is
+        caught on purpose: the run stops where it is, without another
+        LLM call or test, the ``with`` blocks it crossed have already
+        closed the sandbox, and the steps done are written.
 
         Args:
             args: The parsed options.
@@ -207,7 +217,7 @@ class BenchmarkCli(ABC):
             url, model = self._resolve_model(args)
             recorder = StepRecorder(task_id, self._benchmark(), url, model)
             return self._run(task, url, model, recorder)
-        except Exception as error:
+        except (Exception, TerminationRequested) as error:
             if recorder is None:
                 recorder = StepRecorder(
                     task_id, self._benchmark(), url, model
@@ -215,7 +225,6 @@ class BenchmarkCli(ABC):
             return recorder.finish(
                 success=False,
                 solution="",
-                system_prompt="",
                 total_time_seconds=self._clock() - self._started_at,
                 error=f"{type(error).__name__}: {error}",
             )
@@ -251,6 +260,7 @@ class BenchmarkCli(ABC):
         prompt = task.prompt()
         with self._open_sandbox() as sandbox:
             system_prompt = prompt.system_prompt(sandbox.manual())
+            recorder.set_system_prompt(system_prompt)
             conversation = Conversation(
                 system_prompt,
                 prompt.task_message(),
@@ -266,11 +276,12 @@ class BenchmarkCli(ABC):
                 recorder=recorder,
             )
             result = loop.run()
-            success, solution = task.conclude(result, sandbox)
+            success, solution = task.conclude(
+                result, sandbox, budget.remaining_seconds
+            )
         return recorder.finish(
             success=success,
             solution=solution,
-            system_prompt=system_prompt,
             total_time_seconds=budget.elapsed_seconds,
             error=result.error,
         )
