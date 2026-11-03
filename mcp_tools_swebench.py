@@ -162,8 +162,8 @@ def search_code(pattern: str, file_pattern: str) -> str:
     Args:
         pattern (str): The searched pattern in code, literal text, not a regex.
         file_pattern (str):  Glob matched against file names only, not paths.
-            Must be in glob format. Example: '*.py' or 'test_*'. 'core/*.py'
-            will not work.
+            Empty means all files. Must be in glob format.
+            Example: '*.py' or 'test_*'. 'core/*.py' will not work.
 
     Raises:
         ToolError: In case of fail during code execution or an empty pattern.
@@ -171,6 +171,9 @@ def search_code(pattern: str, file_pattern: str) -> str:
 
     if not pattern:
         raise ToolError("The pattern to search in code can't be empty or None")
+
+    if not file_pattern:
+        file_pattern = "*"
 
     excluded: list[str] = []
 
