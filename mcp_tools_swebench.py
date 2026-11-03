@@ -7,13 +7,14 @@ from fastmcp.exceptions import ToolError
 
 mcp = FastMCP("mcp_tools_swebench")
 
-TESTBED_PATH = os.environ.get("TESTBED_PATH", "")
+testbed_path_temp = os.environ.get("TESTBED_PATH", "")
 CONTAINER_ID = os.environ.get("CONTAINER_ID")
 EXCLUDED_DIRS = [".venv", ".git", "__pycache__"]
 
-if not TESTBED_PATH:
+if not testbed_path_temp:
     raise ValueError("Missing TESTBED_PATH variable to launch MCP server.")
 
+TESTBED_PATH = os.path.abspath(testbed_path_temp)
 
 def _run(cmd: list[str]) -> CompletedProcess:
     if CONTAINER_ID:
@@ -145,6 +146,11 @@ def list_files(directory: str, pattern: str) -> str:
         return run_return.stdout
     else:
         raise ToolError(f"You cannot access outside of {TESTBED_PATH}")
+
+
+@mcp.tool
+def search_code(pattern: str, file_pattern: str) -> str:
+
 
 
 if __name__ == "__main__":
