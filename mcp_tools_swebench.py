@@ -84,17 +84,28 @@ def read_file(filepath: str, start_line: int, end_line: int) -> str:
             return "No lines in range, file has fewer lines."
         return result
     else:
-        return f"You cannot access outside of {TESTBED_PATH}"
+        raise ToolError(f"You cannot access outside of {TESTBED_PATH}")
 
 
 @mcp.tool()
 def list_files(directory: str, pattern: str) -> str:
-    """Search and return all file names found in the passed directory. The
-    return format is a formatted string with each file name on a new line.
+    """Search and return all file names found in the passed directory by a
+    recursive search. The return format is a formatted string with each
+    file's absolute path on a new line with a limit of 50. Example:
+    list_files('.', '*.py'). '.venv', '.git' and '__pycache__' directories are
+    ignored during search. If a list exceeds 50 lines, it is truncated and a
+    message gives the total count; use a more specific pattern.
 
     Args:
-        directory (str): The directory root of research
-        pattern (str): The pattern to find in name. Must be in glob format.
+        directory (str): Directory to search in, absolute or relative to the
+            repository root
+        pattern (str): The pattern is matched against the file name only, not
+            the path. Must be in glob format. Example: '*.py' or 'test_*'.
+            'core/*.py' will not work.
+
+    Raises:
+        ToolError: In case of fail during code execution or an attempt to
+        access outside of authorized directory.
     """
 
     complete_filepath = os.path.normpath(os.path.join(TESTBED_PATH, directory))
