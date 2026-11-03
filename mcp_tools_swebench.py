@@ -16,7 +16,18 @@ if not testbed_path_temp:
 
 TESTBED_PATH = os.path.abspath(testbed_path_temp)
 
-def _run(cmd: list[str]) -> CompletedProcess:
+
+def _resolve_path(path: str) -> str:
+    """Return the absolute normalized path, or raise ToolError if outside."""
+
+    complete_filepath = os.path.normpath(os.path.join(TESTBED_PATH, path))
+    if not Path(complete_filepath).is_relative_to(TESTBED_PATH):
+        raise ToolError(f"You cannot access outside of {TESTBED_PATH}")
+
+    return complete_filepath
+
+
+def _run(cmd: list[str]) -> CompletedProcess[str]:
     if CONTAINER_ID:
         final_cmd = ["docker", "exec", "-w", TESTBED_PATH, CONTAINER_ID] + cmd
         final_cwd = None
@@ -27,11 +38,6 @@ def _run(cmd: list[str]) -> CompletedProcess:
                           text=True,
                           capture_output=True,
                           cwd=final_cwd)
-
-
-def _check_path(path: str) -> bool:
-
-    return Path(path).is_relative_to(TESTBED_PATH)
 
 
 def _truncate(sentence: str, nb_lines: int, msg: str) -> str:
@@ -63,29 +69,26 @@ def read_file(filepath: str, start_line: int, end_line: int) -> str:
         raise ValueError("The start_line value cannot be lower than 1.")
     if start_line > end_line:
         raise ValueError("The start_line cannot be greater than end_line.")
-    complete_filepath = os.path.normpath(os.path.join(TESTBED_PATH, filepath))
-    if _check_path(complete_filepath):
-        cmd: list[str] = [
-            "sed",
-            "-n",
-            f"{start_line},{end_line}p",
-            "--",
-            complete_filepath,
-        ]
-        result = ""
-        run_return: CompletedProcess[str] = _run(cmd=cmd)
-        if run_return.returncode != 0:
-            code = run_return.returncode
-            raise ToolError("The tool execution failed with code"
-                            f" {code}:\n{run_return.stderr}")
-        response = run_return.stdout.splitlines()
-        for number, line in enumerate(response, start=start_line):
-            result += f"{number}: {line}\n"
-        if result == "":
-            return "No lines in range, file has fewer lines."
-        return result
-    else:
-        raise ToolError(f"You cannot access outside of {TESTBED_PATH}")
+    complete_filepath: str = _resolve_path(filepath)
+    cmd: list[str] = [
+        "sed",
+        "-n",
+        f"{start_line},{end_line}p",
+        "--",
+        complete_filepath,
+    ]
+    result = ""
+    run_return: CompletedProcess[str] = _run(cmd=cmd)
+    if run_return.returncode != 0:
+        code = run_return.returncode
+        raise ToolError("The tool execution failed with code"
+                        f" {code}:\n{run_return.stderr}")
+    response = run_return.stdout.splitlines()
+    for number, line in enumerate(response, start=start_line):
+        result += f"{number}: {line}\n"
+    if result == "":
+        return "No lines in range, file has fewer lines."
+    return result
 
 
 @mcp.tool()
@@ -109,48 +112,98 @@ def list_files(directory: str, pattern: str) -> str:
         access outside of authorized directory.
     """
 
-    complete_filepath = os.path.normpath(os.path.join(TESTBED_PATH, directory))
-    if _check_path(complete_filepath):
-        excluded: list[str] = []
+    complete_filepath: str = _resolve_path(directory)
+    excluded: list[str] = []
 
-        for i, name in enumerate(EXCLUDED_DIRS):
-            excluded.append("-name")
-            excluded.append(name)
-            if i < len(EXCLUDED_DIRS) - 1:
-                excluded.append("-o")
+    for i, name in enumerate(EXCLUDED_DIRS):
+        excluded.append("-name")
+        excluded.append(name)
+        if i < len(EXCLUDED_DIRS) - 1:
+            excluded.append("-o")
 
-        cmd: list[str] = [
-            "find",
-            complete_filepath,
-            "(",
-            *excluded,
-            ")",
-            "-prune",
-            "-o",
-            "-type",
-            "f",
-            "-name",
-            pattern,
-            "-print"
-        ]
-        run_return: CompletedProcess[str] = _run(cmd=cmd)
-        if run_return.returncode != 0:
-            code = run_return.returncode
-            raise ToolError("The tool execution failed with code"
-                            f" {code}:\n{run_return.stderr}")
-        if run_return.stdout == "":
-            return f"No file matching {pattern} in {directory}"
-        if run_return.stdout.count("\n") > 50:
-            msg: str = "files shown, use a more specific pattern"
-            return _truncate(run_return.stdout, 50, msg)
-        return run_return.stdout
-    else:
-        raise ToolError(f"You cannot access outside of {TESTBED_PATH}")
+    cmd: list[str] = [
+        "find",
+        complete_filepath,
+        "(",
+        *excluded,
+        ")",
+        "-prune",
+        "-o",
+        "-type",
+        "f",
+        "-name",
+        pattern,
+        "-print"
+    ]
+    run_return: CompletedProcess[str] = _run(cmd=cmd)
+    if run_return.returncode != 0:
+        code = run_return.returncode
+        raise ToolError("The tool execution failed with code"
+                        f" {code}:\n{run_return.stderr}")
+    if run_return.stdout == "":
+        return f"No file matching {pattern} in {directory}"
+    if run_return.stdout.count("\n") > 50:
+        msg: str = "files shown, use a more specific pattern"
+        return _truncate(run_return.stdout, 50, msg)
+    return run_return.stdout
 
 
 @mcp.tool
 def search_code(pattern: str, file_pattern: str) -> str:
+    """Search a literal text in the repository files whose name matches
+    file_pattern. The return is in format:
+    /absolute/path_to_file.py:<line_number> <line_content>
+    /absolute/path_to_other_file.py:<line_number> <line_content>
+    ...
+    '.venv', '.git' and '__pycache__' directories are
+    ignored during search. If a list exceeds 50 lines, it is truncated and a
+    message gives the total count; use a more specific pattern.
 
+    Args:
+        pattern (str): The searched pattern in code, literal text, not a regex.
+        file_pattern (str):  Glob matched against file names only, not paths.
+            Must be in glob format. Example: '*.py' or 'test_*'. 'core/*.py'
+            will not work.
+
+    Raises:
+        ToolError: In case of fail during code execution or an empty pattern.
+    """
+
+    if not pattern:
+        raise ToolError("The pattern to search in code can't be empty or None")
+
+    excluded: list[str] = []
+
+    for name in EXCLUDED_DIRS:
+        excluded.append(f"--exclude-dir={name}")
+
+    cmd: list[str] = [
+        "grep",
+        "-rnFI",
+        *excluded,
+        "-e",
+        pattern,
+        f"--include={file_pattern}",
+        TESTBED_PATH
+    ]
+
+    run_return: CompletedProcess[str] = _run(cmd=cmd)
+    if run_return.returncode == 1:
+        return f"No code matching '{pattern}' in files matching"\
+                f" '{file_pattern}'."
+    elif run_return.returncode != 0:
+        raise ToolError("The tool execution failed with code"
+                        f" {run_return.returncode}:\n{run_return.stderr}")
+
+    final_return: str = ""
+    for line in run_return.stdout.splitlines():
+        split_line = line.split(":", 2)
+        final_return += f"{split_line[0]}:{split_line[1]} {split_line[2]}\n"
+
+    if final_return.count("\n") > 50:
+        msg: str = "matching lines shown, use a more specific pattern"
+        return _truncate(final_return, 50, msg)
+    return final_return
 
 
 if __name__ == "__main__":
