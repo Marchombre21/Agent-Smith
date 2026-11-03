@@ -27,9 +27,10 @@ def _resolve_path(path: str) -> str:
     return complete_filepath
 
 
-def _run(cmd: list[str]) -> CompletedProcess[str]:
+def _run(cmd: list[str], input: str | None = None) -> CompletedProcess[str]:
     if CONTAINER_ID:
-        final_cmd = ["docker", "exec", "-w", TESTBED_PATH, CONTAINER_ID] + cmd
+        final_cmd = ["docker", "exec", "-i", "-w", TESTBED_PATH, CONTAINER_ID
+                     ] + cmd
         final_cwd = None
     else:
         final_cmd = cmd
@@ -37,7 +38,8 @@ def _run(cmd: list[str]) -> CompletedProcess[str]:
     return subprocess.run(final_cmd,
                           text=True,
                           capture_output=True,
-                          cwd=final_cwd)
+                          cwd=final_cwd,
+                          input=input)
 
 
 def _truncate(sentence: str, nb_lines: int, msg: str) -> str:
@@ -46,6 +48,12 @@ def _truncate(sentence: str, nb_lines: int, msg: str) -> str:
     final: str = f"\n[Truncated: {nb_lines} of {length_datas} {msg}]"
     new_data = "\n".join(tmp_datas[:nb_lines]) + final
     return new_data
+
+
+def _return_error(code: int, err: str | None) -> None:
+    if code != 0:
+        raise ToolError("The tool execution failed with code"
+                        f" {code}:\n{err}")
 
 
 @mcp.tool()
@@ -79,10 +87,7 @@ def read_file(filepath: str, start_line: int, end_line: int) -> str:
     ]
     result = ""
     run_return: CompletedProcess[str] = _run(cmd=cmd)
-    if run_return.returncode != 0:
-        code = run_return.returncode
-        raise ToolError("The tool execution failed with code"
-                        f" {code}:\n{run_return.stderr}")
+    _return_error(run_return.returncode, run_return.stderr)
     response = run_return.stdout.splitlines()
     for number, line in enumerate(response, start=start_line):
         result += f"{number}: {line}\n"
@@ -122,24 +127,11 @@ def list_files(directory: str, pattern: str) -> str:
             excluded.append("-o")
 
     cmd: list[str] = [
-        "find",
-        complete_filepath,
-        "(",
-        *excluded,
-        ")",
-        "-prune",
-        "-o",
-        "-type",
-        "f",
-        "-name",
-        pattern,
-        "-print"
+        "find", complete_filepath, "(", *excluded, ")", "-prune", "-o",
+        "-type", "f", "-name", pattern, "-print"
     ]
     run_return: CompletedProcess[str] = _run(cmd=cmd)
-    if run_return.returncode != 0:
-        code = run_return.returncode
-        raise ToolError("The tool execution failed with code"
-                        f" {code}:\n{run_return.stderr}")
+    _return_error(run_return.returncode, run_return.stderr)
     if run_return.stdout == "":
         return f"No file matching {pattern} in {directory}"
     if run_return.stdout.count("\n") > 50:
@@ -148,7 +140,7 @@ def list_files(directory: str, pattern: str) -> str:
     return run_return.stdout
 
 
-@mcp.tool
+@mcp.tool()
 def search_code(pattern: str, file_pattern: str) -> str:
     """Search a literal text in the repository files whose name matches
     file_pattern. The return is in format:
@@ -181,12 +173,7 @@ def search_code(pattern: str, file_pattern: str) -> str:
         excluded.append(f"--exclude-dir={name}")
 
     cmd: list[str] = [
-        "grep",
-        "-rnFI",
-        *excluded,
-        "-e",
-        pattern,
-        f"--include={file_pattern}",
+        "grep", "-rnFI", *excluded, "-e", pattern, f"--include={file_pattern}",
         TESTBED_PATH
     ]
 
@@ -194,9 +181,7 @@ def search_code(pattern: str, file_pattern: str) -> str:
     if run_return.returncode == 1:
         return f"No code matching '{pattern}' in files matching"\
                 f" '{file_pattern}'."
-    elif run_return.returncode != 0:
-        raise ToolError("The tool execution failed with code"
-                        f" {run_return.returncode}:\n{run_return.stderr}")
+    _return_error(run_return.returncode, run_return.stderr)
 
     final_return: str = ""
     for line in run_return.stdout.splitlines():
@@ -207,6 +192,48 @@ def search_code(pattern: str, file_pattern: str) -> str:
         msg: str = "matching lines shown, use a more specific pattern"
         return _truncate(final_return, 50, msg)
     return final_return
+
+
+@mcp.tool()
+def edit_file(filepath: str, old_str: str, new_str: str) -> str:
+    """Replace an exact string in a file with a new string. An error
+    is raised if the execution failed. Filepath and old_str can't be empty.
+    Example:
+    edit_file('src/module.py', 'return "An error occurs"',
+    'raise ToolError("An error occurs")')
+    If the old_str is replaced with success, a confirmation sentence will be
+    sent.
+
+    Args:
+        filepath (str): Path of the file to edit, absolute or relative to
+            the repository root.
+        old_str (str): The literal string to target.
+        new_str (str): The literal sentence that replaces the previous one.
+
+    Raises:
+        ToolError: In case of empty 'old_str' or empty 'filepath' or an
+        execution failed.
+    """
+
+    if not old_str or not filepath:
+        raise ToolError("Args 'filepath' and 'old_str' can't be empty.")
+
+    complete_filepath: str = _resolve_path(filepath)
+
+    cmd: list[str] = ["cat", complete_filepath]
+
+    run_return: CompletedProcess[str] = _run(cmd=cmd)
+    _return_error(run_return.returncode, run_return.stderr)
+    match run_return.stdout.count(old_str):
+        case 0:
+            raise ToolError("Old_str not found")
+        case n if n > 1:
+            raise ToolError("More than one occurence. Be more specific.")
+    new_content = run_return.stdout.replace(old_str, new_str)
+    cmd = ["tee", complete_filepath]
+    run_return = _run(cmd=cmd, input=new_content)
+    _return_error(run_return.returncode, run_return.stderr)
+    return "Old_str replaced by new_str with success."
 
 
 if __name__ == "__main__":

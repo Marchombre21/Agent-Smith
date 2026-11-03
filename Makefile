@@ -2,6 +2,7 @@ VENV := .venv
 PYTHON := $(VENV)/bin/python3
 UV := uv
 PROG := sandbox
+TESTBED_PATH := $(shell pwd)
 MCP_CMD ?= python mcp_tools_mbpp.py
 CONFIG ?= configs/sandbox_template.json
 MCP_URL ?= http://localhost:8000/mcp
@@ -29,6 +30,9 @@ run-stdio:
 
 run-server:
 	@$(UV) run $(PROG) --mcp-server $(MCP_URL) $(CONFIG)
+
+run-stdio-swebench:
+	@TESTBED_PATH=$(TESTBED_PATH) $(UV) run $(PROG) --mcp-stdio "python3 mcp_tools_swebench.py" $(CONFIG)
 
 debug:
 	@$(PYTHON) -m pdb $(PROG)
