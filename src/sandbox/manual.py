@@ -1,4 +1,5 @@
 import textwrap
+from typing import Any
 from mcp.types import Tool
 from src.models import SandboxConfig
 
@@ -29,7 +30,7 @@ class ManualMaker():
             "object": "dict"
         }
 
-    def _python_type(self, schema: dict) -> str:
+    def _python_type(self, schema: dict[str, Any]) -> str:
 
         result: list[str] = []
         if "anyOf" in schema:
@@ -59,7 +60,7 @@ class ManualMaker():
             return self.converter.get(kind, "Any")
         return "Any"
 
-    def _accept_null(self, schema: dict) -> bool:
+    def _accept_null(self, schema: dict[str, Any]) -> bool:
         if "anyOf" in schema:
             for schem in schema["anyOf"]:
                 if self._accept_null(schema=schem):
