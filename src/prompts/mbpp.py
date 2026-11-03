@@ -13,7 +13,8 @@ class MbppPrompt(BenchmarkPrompt):
 
     _METHOD = """\
 Method:
-1. Write the function and run the given tests on it.
+1. Write the function and, in the same code block, run the given tests \
+on it.
 2. If a test fails, read the error and fix the function.
 3. As soon as all tests pass, call final_answer with the full source \
 code as a string, imports included. A hidden test will check it too: \
