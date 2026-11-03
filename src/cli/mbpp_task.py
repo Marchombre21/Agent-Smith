@@ -47,7 +47,7 @@ class MbppTask(BenchmarkTask):
         return MbppPrompt(self._task)
 
     def conclude(
-        self, result: RunResult, sandbox: SandboxPort
+        self, result: RunResult, sandbox: SandboxPort, timeout: float
     ) -> tuple[bool, str]:
         """Take the code passed to ``final_answer`` and check it (design G).
 
@@ -58,20 +58,26 @@ class MbppTask(BenchmarkTask):
         Args:
             result: What the loop returned.
             sandbox: The sandbox of the run, still open.
+            timeout: Seconds left for the public tests; with none left
+                they are not run.
 
         Returns:
             ``(False, "")`` without a final answer (the loop already says
             why in ``result.error``); otherwise whether the public tests
-            pass, and the code. The code is kept even when they fail: the
-            validation runs it anyway.
+            pass in time, and the code. The code is kept even when they
+            fail: the validation runs it anyway.
         """
         if result.final_answer is None:
             return False, ""
         solution = result.final_answer
-        return self._passes_public_tests(solution, sandbox), solution
+        if timeout <= 0:
+            # success is only informative: losing it is cheaper than
+            # going past the subject's time limit.
+            return False, solution
+        return self._passes_public_tests(solution, sandbox, timeout), solution
 
     def _passes_public_tests(
-        self, solution: str, sandbox: SandboxPort
+        self, solution: str, sandbox: SandboxPort, timeout: float
     ) -> bool:
         """Run the public tests on ``solution`` with the MCP tool
         ``run_tests``.
@@ -79,6 +85,12 @@ class MbppTask(BenchmarkTask):
         ``run_tests`` starts a new process for each test, as the
         validation does, but ignores ``test_imports``: they are added
         after the solution, in the order of the validation.
+
+        Args:
+            solution: The code passed to ``final_answer``.
+            sandbox: The sandbox of the run, still open.
+            timeout: Seconds allowed; the sandbox also applies its own
+                limit, whichever is smaller.
 
         Returns:
             True only if the tool ran and reported success; False if it
@@ -88,7 +100,7 @@ class MbppTask(BenchmarkTask):
         code = "\n".join([solution, *self._task.test_imports])
         call = f"print(run_tests({code!r}, {self._task.test_list!r}))"
         try:
-            execution = sandbox.execute(call)
+            execution = sandbox.execute(call, timeout=timeout)
         except SandboxError:
             return False
         if execution.error is not None or execution.timed_out:

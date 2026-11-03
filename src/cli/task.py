@@ -26,7 +26,7 @@ class BenchmarkTask(ABC):
 
     @abstractmethod
     def conclude(
-        self, result: RunResult, sandbox: SandboxPort
+        self, result: RunResult, sandbox: SandboxPort, timeout: float
     ) -> tuple[bool, str]:
         """Turn the end of the loop into ``(success, solution)``.
 
@@ -37,6 +37,9 @@ class BenchmarkTask(ABC):
             result: What the loop returned: the value passed to
                 ``final_answer``, or why it stopped without one.
             sandbox: The sandbox of the run, still open.
+            timeout: Seconds left before the task's deadline; zero or
+                less when the loop used it all. Work done here counts
+                towards the subject's time limit too.
 
         Returns:
             Whether the agent believes it solved the task, and the

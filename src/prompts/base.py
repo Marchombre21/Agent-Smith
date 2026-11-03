@@ -31,9 +31,7 @@ Rules:
 use native tool or function calls.
 - Write <end_code> only right after a code block.
 - A value is not shown unless you print it: use print().
-- Variables, functions and imports persist from one step to the next. \
-If an Observation says variables were lost, define them again.
-- Calling final_answer(...) ends the task at once.
+- If an Observation says variables were lost, define them again.
 - The functions in <Sandbox_Manual> are already defined in the sandbox: \
 call them inside your ```python block, like any Python function."""
 

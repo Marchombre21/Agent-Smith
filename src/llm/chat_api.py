@@ -253,7 +253,8 @@ class ChatCompletionsApi:
             ):
                 raise NativeToolCallError(
                     f"{self._provider.name}: native tool call, no text "
-                    f"(finish_reason {choice.get('finish_reason')})"
+                    f"(finish_reason {choice.get('finish_reason')})",
+                    *self._token_counts(data.get("usage") or {}, "", messages),
                 )
             text = message["content"] or ""
         except (

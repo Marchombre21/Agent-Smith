@@ -4,7 +4,7 @@ from typing import Optional
 
 from src.extraction.chain import CodeExtraction
 from src.llm.client import LLMClient
-from src.llm.errors import LLMError
+from src.llm.errors import LLMCallFailed, LLMError
 from src.orchestrator.budget import TaskBudget
 from src.orchestrator.conversation import Conversation
 from src.orchestrator.models import RunResult
@@ -97,16 +97,25 @@ class Orchestrator:
             The value passed to ``final_answer()``, or None to go on.
 
         Raises:
-            LLMError: The LLM gave no answer (tries used up, time over).
+            LLMError: The LLM gave no answer (tries used up, time over);
+                when requests were sent (``LLMCallFailed``), the step is
+                recorded first, so their cost appears in the trace.
             SandboxError: The sandbox itself broke; the step is recorded
                 first, so its tokens appear in the trace.
         """
-        response = self._llm.complete(
-            self._conversation.messages,
-            stop=self._STOP_SEQUENCES,
-            max_tokens=self._budget.remaining_output_tokens,
-            timeout=self._budget.remaining_seconds,
-        )
+        try:
+            response = self._llm.complete(
+                self._conversation.messages,
+                stop=self._STOP_SEQUENCES,
+                max_tokens=self._budget.remaining_output_tokens,
+                timeout=self._budget.remaining_seconds,
+            )
+        except LLMCallFailed as failure:
+            self._budget.record_step(
+                failure.input_tokens, failure.output_tokens
+            )
+            self._recorder.record_failure(failure)
+            raise
         self._budget.record_step(response.input_tokens, response.output_tokens)
         self._conversation.add_answer(response.text)
         extracted = self._extraction.extract(response.text)

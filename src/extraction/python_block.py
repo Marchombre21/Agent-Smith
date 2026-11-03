@@ -32,6 +32,13 @@ class PythonBlockExtractor(CodeExtractor):
         re.VERBOSE | re.DOTALL | re.MULTILINE,
     )
 
+    # An opening fence glued to the text before it ("...the tests.```python"),
+    # as Codestral writes it. Only with a Python tag: a bare ``` glued to
+    # text is almost always a closing fence glued to the code.
+    _GLUED_FENCE = re.compile(
+        r"(?<=\S)```(?=[ \t]*(?:python3?|py)[ \t]*\n)", re.IGNORECASE
+    )
+
     _PYTHON_TAGS = ("python", "py", "python3", "")
 
     def extract(self, text: str) -> ExtractionResult | None:
@@ -41,9 +48,10 @@ class PythonBlockExtractor(CodeExtractor):
         sandbox keeps variables between steps anyway. Blocks are
         dedented, so an indented block does not raise IndentationError.
 
-        Repairs, each reported in ``warnings`` for the LLM: a block
-        tagged ``py``, ``python3`` or not tagged at all, a missing
-        closing fence, several blocks joined.
+        Repairs, each reported in ``warnings`` for the LLM: an opening
+        ```python glued to the text before it, a block tagged ``py``,
+        ``python3`` or not tagged at all, a missing closing fence,
+        several blocks joined.
 
         Returns:
             The joined code; None when there is no non-empty Python
@@ -51,6 +59,13 @@ class PythonBlockExtractor(CodeExtractor):
         """
         blocks: list[str] = []
         warnings: list[str] = []
+        text, glued = self._GLUED_FENCE.subn("\n```", text)
+        if glued:
+            warnings.append(
+                "A ```python fence was glued to the text before it; it was "
+                "read as the start of a code block. Put the fence on its "
+                "own line."
+            )
         for match in self._BLOCK.finditer(text):
             tag = match["lang"].lower()
             if tag not in self._PYTHON_TAGS:

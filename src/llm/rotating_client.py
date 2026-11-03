@@ -12,6 +12,7 @@ from src.llm.client import LLMClient
 from src.llm.config import ApiKey, ProviderRegistry
 from src.llm.errors import (
     AuthError,
+    LLMCallFailed,
     LLMError,
     NativeToolCallError,
     ProviderError,
@@ -125,19 +126,26 @@ class RotatingClient(LLMClient):
 
         The returned ``LLMResponse`` counts the failed attempts in
         ``retries``, and its ``request_time_ms`` covers the whole call,
-        failed attempts and waits included.
+        failed attempts and waits included. Its tokens include those of
+        the attempts discarded for a native tool call: the provider
+        processed them, so the task's limits must see them.
 
         Raises:
             ValueError: ``timeout`` is zero or negative.
-            LLMError: The last error, when attempts or time ran out or the
-                request itself was refused; a ``RateLimitError`` when
-                every key stayed blocked and no attempt could be made.
+            LLMCallFailed: At least one request was sent and none gave an
+                answer (attempts or time ran out, or the request itself
+                was refused); it carries their cost, and the last error
+                as ``__cause__``.
+            RateLimitError: Every key stayed blocked and no request could
+                be sent: nothing to count.
         """
         if timeout is not None and timeout <= 0:
             raise ValueError("timeout must be positive")
         start = self._clock()
         end = math.inf if timeout is None else start + timeout
         last_error: LLMError | None = None
+        discarded_input = discarded_output = 0
+        sent = 0
         for attempt in range(1, self._max_attempts + 1):
             key = self._pool.acquire()
             if key is None:
@@ -151,6 +159,7 @@ class RotatingClient(LLMClient):
             remaining = end - self._clock()
             if remaining <= 0:
                 break
+            sent += 1
             try:
                 response = self._api.send(
                     key,
@@ -161,7 +170,15 @@ class RotatingClient(LLMClient):
                 )
             except LLMError as error:
                 last_error = error
-                delay = self._react(error, key, attempt)
+                if isinstance(error, NativeToolCallError):
+                    discarded_input += error.input_tokens
+                    discarded_output += error.output_tokens
+                try:
+                    delay = self._react(error, key, attempt)
+                except LLMError as fatal:
+                    raise self._failure(
+                        fatal, sent, discarded_input, discarded_output, start
+                    ) from fatal
                 if delay > 0 and attempt < self._max_attempts:
                     if self._clock() + delay >= end:
                         break
@@ -169,15 +186,45 @@ class RotatingClient(LLMClient):
                 continue
             return response.model_copy(
                 update={
+                    "input_tokens": response.input_tokens + discarded_input,
+                    "output_tokens": response.output_tokens
+                    + discarded_output,
                     "retries": attempt - 1,
                     "request_time_ms": (self._clock() - start) * 1000,
                 }
             )
         if last_error is not None:
-            raise last_error
+            raise self._failure(
+                last_error, sent, discarded_input, discarded_output, start
+            ) from last_error
         raise RateLimitError(
             "every key is blocked and none is released in time",
             self._pool.wait_time(),
+        )
+
+    def _failure(
+        self,
+        cause: LLMError,
+        attempts: int,
+        input_tokens: int,
+        output_tokens: int,
+        start: float,
+    ) -> LLMCallFailed:
+        """Build the error of a call that sent requests but got no answer.
+
+        Args:
+            cause: The error of the last attempt.
+            attempts: Requests sent during the call.
+            input_tokens: Prompt tokens of the discarded attempts.
+            output_tokens: Generated tokens of the discarded attempts.
+            start: Clock value when the call began.
+        """
+        return LLMCallFailed(
+            cause,
+            attempts,
+            input_tokens,
+            output_tokens,
+            (self._clock() - start) * 1000,
         )
 
     def _react(self, error: LLMError, key: ApiKey, attempt: int) -> float:
