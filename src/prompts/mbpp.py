@@ -13,20 +13,23 @@ class MbppPrompt(BenchmarkPrompt):
 
     _METHOD = """\
 Method:
-1. Write the function and, in the same code block, run the given tests \
-on it.
-2. If a test fails, read the error and fix the function.
-3. Once an Observation shows that all tests pass, call final_answer in \
-a new step, with the full source code as a string, imports included. \
-A hidden test will check it too: keep the given signature and do not \
-hard-code the expected results.
+Before your first step, the sandbox defines TESTS, the list of the \
+given tests.
+1. Put the full source of the function, imports included, in a string \
+named code, and in the same code block check it with \
+print(run_tests(code, TESTS)), like this:
 ```python
-final_answer('''import math
+code = '''import math
 
 def area(r):
     return math.pi * r * r
-''')
-```<end_code>"""
+'''
+print(run_tests(code, TESTS))
+```<end_code>
+2. If a test fails, read the error and fix code.
+3. Once an Observation shows that all tests pass, call final_answer(code) \
+in a new step. A hidden test will check it too: keep the given \
+signature and do not hard-code the expected results."""
 
     def __init__(self, task: MBPPTaskInput) -> None:
         """Keep the task to write into the first message.
@@ -47,10 +50,11 @@ def area(r):
         if task.test_imports:
             lines.append("Test imports:")
             lines.extend(task.test_imports)
-        lines.append("Tests:")
+        # TESTS is defined in the sandbox by MbppTask.setup_code.
+        lines.append("Tests (already in the list TESTS):")
         lines.extend(task.test_list)
         return "\n".join(lines)
 
     def _method(self) -> str:
-        """Return the MBPP method: test, fix, answer as soon as it passes."""
+        """Return the MBPP method: check with run_tests, fix, answer."""
         return self._METHOD

@@ -39,6 +39,7 @@ class Orchestrator:
         conversation: Conversation,
         budget: TaskBudget,
         recorder: StepRecorder,
+        setup_code: str = "",
     ) -> None:
         """Keep the parts of the loop.
 
@@ -51,7 +52,13 @@ class Orchestrator:
             budget: Limits of the task, with the clock already started.
             recorder: Keeps the metrics of each step; the CLI reads it
                 afterwards to write ``solution.json``.
+            setup_code: Run in the sandbox before the first step, and
+                again after the sandbox lost its variables (MBPP: the
+                given tests as ``TESTS``); empty for nothing.
         """
+        self._setup_code = setup_code
+        # True when the sandbox holds what setup_code defines.
+        self._ready = not setup_code
         self._llm = llm
         self._sandbox = sandbox
         self._extraction = extraction
@@ -111,6 +118,8 @@ class Orchestrator:
         becomes the error of the run, and the model reads it. A
         ``KeyboardInterrupt`` goes up untouched.
         """
+        if not self._ready:
+            self._setup()
         try:
             response = self._llm.complete(
                 self._conversation.messages,
@@ -145,7 +154,27 @@ class Orchestrator:
                 result = ExecutionResult(
                     error=self._EXIT_CALLED.format(code=exit_.code)
                 )
+        if result is not None and result.state_reset and self._setup_code:
+            self._ready = False
         observation = self._formatter.format(extracted, result)
         self._conversation.add_observation(observation)
         self._recorder.record(response, extracted.code, observation)
         return result.final_answer if result is not None else None
+
+    def _setup(self) -> None:
+        """Run ``setup_code`` in the sandbox, before the next LLM call.
+
+        It is not a step: no LLM call, nothing recorded, only time spent.
+
+        Raises:
+            SandboxError: The sandbox broke, or the setup code itself
+                failed (a bug of ours, not of the model).
+        """
+        result = self._sandbox.execute(
+            self._setup_code, timeout=self._budget.remaining_seconds
+        )
+        if result.error is not None or result.timed_out:
+            raise SandboxError(
+                f"setup code failed: {result.error or 'timed out'}"
+            )
+        self._ready = True
