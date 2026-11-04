@@ -25,6 +25,10 @@ class Orchestrator:
     # The model stops before writing an observation itself: the end of a
     # Python block, of a Hermes tool call, or a ReAct "Observation:".
     _STOP_SEQUENCES = ("<end_code>", "</tool_call>", "Observation:")
+    _EXIT_CALLED = (
+        "SystemExit({code}): your code called exit() or raised "
+        "SystemExit; it does not end the task. To finish, call final_answer."
+    )
 
     def __init__(
         self,
@@ -102,6 +106,10 @@ class Orchestrator:
                 recorded first, so their cost appears in the trace.
             SandboxError: The sandbox itself broke; the step is recorded
                 first, so its tokens appear in the trace.
+
+        A ``SystemExit`` raised by the model's code is not raised: it
+        becomes the error of the run, and the model reads it. A
+        ``KeyboardInterrupt`` goes up untouched.
         """
         try:
             response = self._llm.complete(
@@ -130,6 +138,13 @@ class Orchestrator:
                     response, extracted.code, f"Sandbox failure: {error}"
                 )
                 raise
+            except SystemExit as exit_:
+                # The sandbox passes on the SystemExit of the model's code
+                # (subject V.2): it reaches the loop, which reports it to
+                # the model instead of stopping without solution.json.
+                result = ExecutionResult(
+                    error=self._EXIT_CALLED.format(code=exit_.code)
+                )
         observation = self._formatter.format(extracted, result)
         self._conversation.add_observation(observation)
         self._recorder.record(response, extracted.code, observation)
