@@ -16,9 +16,10 @@ Method:
 1. Write the function and, in the same code block, run the given tests \
 on it.
 2. If a test fails, read the error and fix the function.
-3. As soon as all tests pass, call final_answer with the full source \
-code as a string, imports included. A hidden test will check it too: \
-keep the given signature and do not hard-code the expected results.
+3. Once an Observation shows that all tests pass, call final_answer in \
+a new step, with the full source code as a string, imports included. \
+A hidden test will check it too: keep the given signature and do not \
+hard-code the expected results.
 ```python
 final_answer('''import math
 

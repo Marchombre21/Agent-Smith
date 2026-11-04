@@ -25,6 +25,15 @@ class BenchmarkTask(ABC):
         """Return the prompt that starts the task."""
 
     @abstractmethod
+    def setup_code(self) -> str:
+        """Return the code to run in the sandbox before the first step.
+
+        It defines what the model may use without writing it (MBPP: the
+        given tests). The loop runs it again whenever the sandbox loses
+        its variables. An empty string means nothing to run.
+        """
+
+    @abstractmethod
     def conclude(
         self, result: RunResult, sandbox: SandboxPort, timeout: float
     ) -> tuple[bool, str]:
