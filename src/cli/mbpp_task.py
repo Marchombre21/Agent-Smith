@@ -18,6 +18,10 @@ class MbppTask(BenchmarkTask):
     and how to conclude.
     """
 
+    # Name of the list of given tests in the sandbox; MbppPrompt tells
+    # the model to pass it to run_tests.
+    _TESTS_NAME = "TESTS"
+
     def __init__(self, task: MBPPTaskInput) -> None:
         """Keep the input of the task.
 
@@ -45,6 +49,20 @@ class MbppTask(BenchmarkTask):
     def prompt(self) -> MbppPrompt:
         """Return the MBPP prompt, built on this task."""
         return MbppPrompt(self._task)
+
+    def setup_code(self) -> str:
+        """Define ``TESTS``, the given tests, ready for ``run_tests``.
+
+        The model copied tests wrongly or invented its own (essai 62);
+        with ``TESTS`` it checks the exact ones. Each test carries the
+        ``test_imports``, which ``run_tests`` ignores: they come after
+        the code, in the order of the validation.
+        """
+        tests = [
+            "\n".join([*self._task.test_imports, test])
+            for test in self._task.test_list
+        ]
+        return f"{self._TESTS_NAME} = {tests!r}"
 
     def conclude(
         self, result: RunResult, sandbox: SandboxPort, timeout: float

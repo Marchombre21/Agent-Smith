@@ -17,6 +17,7 @@ class ObservationFormatter:
     """
 
     _NO_OUTPUT = "(no output)"
+    _SILENT_RUN = "The code ran without error and printed nothing."
     _TRUNCATED = "[Output truncated: too long.]"
     _TIMED_OUT = (
         "Execution stopped: time limit reached. The output above is partial."
@@ -66,7 +67,11 @@ class ObservationFormatter:
         parts: List[str] = list(extraction.warnings)
         if result is None:
             return self._shorten("\n".join(parts))
-        parts.append(result.stdout.rstrip("\n") or self._NO_OUTPUT)
+        clean = result.error is None and not (
+            result.timed_out or result.memory_exceeded
+        )
+        empty = self._SILENT_RUN if clean else self._NO_OUTPUT
+        parts.append(result.stdout.rstrip("\n") or empty)
         if result.truncated:
             parts.append(self._TRUNCATED)
         if result.timed_out:

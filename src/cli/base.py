@@ -274,6 +274,7 @@ class BenchmarkCli(ABC):
                 conversation=conversation,
                 budget=budget,
                 recorder=recorder,
+                setup_code=task.setup_code(),
             )
             result = loop.run()
             success, solution = task.conclude(

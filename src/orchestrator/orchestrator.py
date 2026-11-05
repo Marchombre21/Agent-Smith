@@ -25,6 +25,10 @@ class Orchestrator:
     # The model stops before writing an observation itself: the end of a
     # Python block, of a Hermes tool call, or a ReAct "Observation:".
     _STOP_SEQUENCES = ("<end_code>", "</tool_call>", "Observation:")
+    _EXIT_CALLED = (
+        "SystemExit({code}): your code called exit() or raised "
+        "SystemExit; it does not end the task. To finish, call final_answer."
+    )
 
     def __init__(
         self,
@@ -35,6 +39,7 @@ class Orchestrator:
         conversation: Conversation,
         budget: TaskBudget,
         recorder: StepRecorder,
+        setup_code: str = "",
     ) -> None:
         """Keep the parts of the loop.
 
@@ -47,7 +52,13 @@ class Orchestrator:
             budget: Limits of the task, with the clock already started.
             recorder: Keeps the metrics of each step; the CLI reads it
                 afterwards to write ``solution.json``.
+            setup_code: Run in the sandbox before the first step, and
+                again after the sandbox lost its variables (MBPP: the
+                given tests as ``TESTS``); empty for nothing.
         """
+        self._setup_code = setup_code
+        # True when the sandbox holds what setup_code defines.
+        self._ready = not setup_code
         self._llm = llm
         self._sandbox = sandbox
         self._extraction = extraction
@@ -102,7 +113,13 @@ class Orchestrator:
                 recorded first, so their cost appears in the trace.
             SandboxError: The sandbox itself broke; the step is recorded
                 first, so its tokens appear in the trace.
+
+        A ``SystemExit`` raised by the model's code is not raised: it
+        becomes the error of the run, and the model reads it. A
+        ``KeyboardInterrupt`` goes up untouched.
         """
+        if not self._ready:
+            self._setup()
         try:
             response = self._llm.complete(
                 self._conversation.messages,
@@ -130,7 +147,34 @@ class Orchestrator:
                     response, extracted.code, f"Sandbox failure: {error}"
                 )
                 raise
+            except SystemExit as exit_:
+                # The sandbox passes on the SystemExit of the model's code
+                # (subject V.2): it reaches the loop, which reports it to
+                # the model instead of stopping without solution.json.
+                result = ExecutionResult(
+                    error=self._EXIT_CALLED.format(code=exit_.code)
+                )
+        if result is not None and result.state_reset and self._setup_code:
+            self._ready = False
         observation = self._formatter.format(extracted, result)
         self._conversation.add_observation(observation)
         self._recorder.record(response, extracted.code, observation)
         return result.final_answer if result is not None else None
+
+    def _setup(self) -> None:
+        """Run ``setup_code`` in the sandbox, before the next LLM call.
+
+        It is not a step: no LLM call, nothing recorded, only time spent.
+
+        Raises:
+            SandboxError: The sandbox broke, or the setup code itself
+                failed (a bug of ours, not of the model).
+        """
+        result = self._sandbox.execute(
+            self._setup_code, timeout=self._budget.remaining_seconds
+        )
+        if result.error is not None or result.timed_out:
+            raise SandboxError(
+                f"setup code failed: {result.error or 'timed out'}"
+            )
+        self._ready = True
