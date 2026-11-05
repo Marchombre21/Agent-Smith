@@ -407,18 +407,32 @@ def find_references(name: str, filepath: str, line: int) -> str:
 
 
 @mcp.tool()
-def get_patch():
-    """Return the differences between last commit and actual version.
+def get_patch() -> str:
+    """Return the unified git diff of all changes made to the repository
+    since the last commit (git -c core.fileMode=false diff).
+
+    This diff is the patch that will be submitted as the solution: check
+    it before giving your final answer. It is never truncated.
+    Only modifications of tracked files are included: new untracked
+    files (e.g. a reproduction script) do not appear in the patch.
+    If nothing was modified, an explicit message is returned.
+
+    Raises:
+        ToolError: If the git command fails (e.g. not a git repository).
     """
     cmd = [
         "git",
-        "diff"
+        "-c",
+        "core.fileMode=false",
+        "diff",
     ]
 
     run_return = _run(cmd=cmd)
     _return_error(run_return.returncode, run_return.stderr)
+    if run_return.stdout == "":
+        return "No changes in the repository."
     return run_return.stdout
 
-# difference
+
 if __name__ == "__main__":
     mcp.run(show_banner=False, log_level="WARNING")
