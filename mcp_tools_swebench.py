@@ -80,27 +80,26 @@ def _truncate(sentence: str, nb_lines: int, msg: str) -> str:
 
 def _return_error(code: int, err: str | None) -> None:
     if code != 0:
-        raise ToolError(
-            "The tool execution failed with code" f" {code}:\n{err}"
-        )
+        raise ToolError("The tool execution failed with code"
+                        f" {code}:\n{err}")
 
 
-def _read_file(filepath: str, line: int) -> str:
+def _read_file(filepath: str, start_line: int, end_line: int) -> str:
 
-    if line < 1:
-        raise ValueError("The line value cannot be lower than 1.")
+    if start_line < 1:
+        raise ToolError("The start_line value cannot be lower than 1.")
+    if start_line > end_line:
+        raise ToolError("The start_line cannot be greater than end_line.")
     complete_filepath: str = _resolve_path(filepath)
     cmd: list[str] = [
         "sed",
         "-n",
-        f"{line},{line}p",
+        f"{start_line},{end_line}p",
         "--",
         complete_filepath,
     ]
     run_return: CompletedProcess[str] = _run(cmd=cmd)
     _return_error(run_return.returncode, run_return.stderr)
-    if run_return.stdout == "":
-        return ""
     return run_return.stdout
 
 
@@ -117,26 +116,13 @@ def read_file(filepath: str, start_line: int, end_line: int) -> str:
         end_line (int): Last line to read (included).
 
     Raises:
-        ValueError: If start_line is lower than 1 or greater than end_line.
-        ToolError: If the file cannot be read (e.g. it does not exist).
+        ToolError: If start_line is lower than 1 or greater than end_line.
+        If the file cannot be read (e.g. it does not exist).
     """
 
-    if start_line < 1:
-        raise ValueError("The start_line value cannot be lower than 1.")
-    if start_line > end_line:
-        raise ValueError("The start_line cannot be greater than end_line.")
-    complete_filepath: str = _resolve_path(filepath)
-    cmd: list[str] = [
-        "sed",
-        "-n",
-        f"{start_line},{end_line}p",
-        "--",
-        complete_filepath,
-    ]
     result = ""
-    run_return: CompletedProcess[str] = _run(cmd=cmd)
-    _return_error(run_return.returncode, run_return.stderr)
-    response = run_return.stdout.splitlines()
+    run_return: str = _read_file(filepath, start_line, end_line)
+    response = run_return.splitlines()
     for number, line in enumerate(response, start=start_line):
         result += f"{number}: {line}\n"
     if result == "":
@@ -240,10 +226,8 @@ def search_code(pattern: str, file_pattern: str) -> str:
 
     run_return: CompletedProcess[str] = _run(cmd=cmd)
     if run_return.returncode == 1:
-        return (
-            f"No code matching '{pattern}' in files matching"
-            f" '{file_pattern}'."
-        )
+        return (f"No code matching '{pattern}' in files matching"
+                f" '{file_pattern}'.")
     _return_error(run_return.returncode, run_return.stderr)
 
     msg: str = "matching lines shown, use a more specific pattern"
@@ -297,10 +281,8 @@ def edit_file(filepath: str, old_str: str, new_str: str) -> str:
     run_return = _run(cmd=cmd, input=new_content)
     _return_error(run_return.returncode, run_return.stderr)
     if complete_filepath.endswith(".py"):
-        code = (
-            "import sys; compile(open(sys.argv[1]).read(),"
-            " sys.argv[1], 'exec')"
-        )
+        code = ("import sys; compile(open(sys.argv[1]).read(),"
+                " sys.argv[1], 'exec')")
         cmd = [
             "python",
             "-c",
@@ -309,17 +291,12 @@ def edit_file(filepath: str, old_str: str, new_str: str) -> str:
         ]
         run_return = _run(cmd=cmd)
         if run_return.returncode != 0:
-            err = (
-                "".join(run_return.stderr.splitlines(keepends=True)[2:])
-                or run_return.stderr
-            )
+            err = ("".join(run_return.stderr.splitlines(keepends=True)[2:])
+                   or run_return.stderr)
             cmd = ["tee", complete_filepath]
             rollback = _run(cmd=cmd, input=old_content)
-            state = (
-                "file unchanged"
-                if rollback.returncode == 0
-                else "rollback FAILED, file contains the broken edit"
-            )
+            state = ("file unchanged" if rollback.returncode == 0 else
+                     "rollback FAILED, file contains the broken edit")
             raise ToolError(f"Edit rejected ({state}): {err}")
     return "Old_str replaced by new_str with success."
 
@@ -359,8 +336,7 @@ def search_function_or_class_definition_in_code(name: str) -> str:
         excluded.append(f"--exclude-dir={name_dir}")
 
     regex = (
-        rf"^[[:space:]]*(async[[:space:]]+)?(def|class)[[:space:]]+{name}\b"
-    )
+        rf"^[[:space:]]*(async[[:space:]]+)?(def|class)[[:space:]]+{name}\b")
     cmd = ["grep", "-rnE", regex, *excluded, "--include=*.py", TESTBED_PATH]
 
     run_return = _run(cmd=cmd)
@@ -374,25 +350,43 @@ def search_function_or_class_definition_in_code(name: str) -> str:
 
 @mcp.tool()
 def find_references(name: str, filepath: str, line: int) -> str:
-    """Find all usages of a symbol (function or class)
+    """Find all usages of a function or class in the repository.
+
+    The symbol is first checked at the given location (usually its
+    definition, found with search_function_or_class_definition_in_code):
+    'name' must appear at 'line' in 'filepath', otherwise an error is
+    raised. Then every whole-word occurrence of 'name' is returned, one
+    line per occurrence, in this format:
+    /absolute/path_to_file.py:<line_number> <line_content>
+    The search is textual: the definition itself, comments, strings and
+    other symbols with the same name are also returned.
+    Only .py files are searched; .venv, .git and __pycache__ are ignored.
+    If nothing is found, an explicit message is returned. Results are
+    limited to 50 lines; if truncated, use search_code with more context
+    (e.g. 'MyClass.method(') to narrow down.
+    Example: find_references('validate_email', 'src/utils.py', 12)
 
     Args:
-        name (str): Function/class name to find occurrences
-        filepath (str): File path where to find the searched
-        object definition
-        line (int): The line in file where to find the searched
-        object definition
+        name (str): Exact name of the function or class, without
+            parentheses or module prefix. Must be a valid Python
+            identifier (e.g. 'validate_email', not 'utils.validate_email').
+        filepath (str): File where the symbol is located, absolute or
+            relative to the repository root.
+        line (int): Line number (starts at 1) where 'name' appears in
+            filepath.
 
     Raises:
-        ToolError: In case of failure
+        ToolError: If name is not a valid Python identifier, if name is
+            not found at line in filepath, if filepath is outside the
+            repository, or if the search command fails.
     """
 
     if not name.isidentifier():
         raise ToolError("'name' must be a valid python identifier.")
 
-    line_found: str = _read_file(
-        filepath=filepath, line=line
-    )
+    line_found: str = _read_file(filepath=filepath,
+                                 start_line=line,
+                                 end_line=line)
 
     if not re.search(rf"\b{name}\b", line_found):
         raise ToolError(f"{name} not found at line {line} in {filepath}")
@@ -412,5 +406,19 @@ def find_references(name: str, filepath: str, line: int) -> str:
     return _truncate(_format_output(run_return.stdout), 50, msg)
 
 
+@mcp.tool()
+def get_patch():
+    """Return the differences between last commit and actual version.
+    """
+    cmd = [
+        "git",
+        "diff"
+    ]
+
+    run_return = _run(cmd=cmd)
+    _return_error(run_return.returncode, run_return.stderr)
+    return run_return.stdout
+
+# difference
 if __name__ == "__main__":
     mcp.run(show_banner=False, log_level="WARNING")
