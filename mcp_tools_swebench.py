@@ -37,20 +37,22 @@ def _format_output(output: str) -> str:
     return final_return
 
 
-def _run(cmd: list[str], input: str | None = None) -> CompletedProcess[str]:
+def _run(cmd: list[str],
+         input: str | None = None,
+         workdir: str = TESTBED_PATH) -> CompletedProcess[str]:
     if CONTAINER_ID:
         final_cmd = [
             "docker",
             "exec",
             "-i",
             "-w",
-            TESTBED_PATH,
+            workdir,
             CONTAINER_ID,
         ] + cmd
         final_cwd = None
     else:
         final_cmd = cmd
-        final_cwd = TESTBED_PATH
+        final_cwd = workdir
     try:
         return subprocess.run(
             final_cmd,
@@ -432,6 +434,24 @@ def get_patch() -> str:
     if run_return.stdout == "":
         return "No changes in the repository."
     return run_return.stdout
+
+
+@mcp.tool()
+def run_command(command: str, workdir: str) -> CompletedProcess[str]:
+    """Execute a shell command in the targeted workdir. Return the result of
+    the subprocess (CompletedProcess[str]).
+
+    Args:
+        command (str): The shell command in a string
+        workdir (str): The repository where execute the command
+    """
+
+    complete_path: str = _resolve_path(workdir)
+
+    cmd = ["bash", "-c", command]
+
+    run_return = _run(cmd=cmd, workdir=complete_path)
+    return run_return
 
 
 if __name__ == "__main__":
