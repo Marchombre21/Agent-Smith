@@ -10,8 +10,10 @@ mcp = FastMCP("mcp_tools_swebench")
 
 testbed_path_temp = os.environ.get("TESTBED_PATH", "")
 CONTAINER_ID = os.environ.get("CONTAINER_ID")
+SCRIPT_PATHS = os.environ.get("SCRIPT_PATHS")
 EXCLUDED_DIRS = [".venv", ".git", "__pycache__"]
 COMMAND_TIMEOUT = 60
+TESTS_TIMEOUT = 100
 
 if not testbed_path_temp:
     raise ValueError("Missing TESTBED_PATH variable to launch MCP server.")
@@ -260,15 +262,13 @@ def edit_file(filepath: str, old_str: str, new_str: str) -> str:
     Example:
     edit_file('src/module.py', 'return "An error occurs"',
     'raise ToolError("An error occurs")')
+    Returns a confirmation message if the replacement succeeded.
 
     Args:
         filepath (str): Path of the file to edit, absolute or relative to
             the repository root.
         old_str (str): The exact text to replace. Must appear exactly once.
         new_str (str): The text that replaces old_str.
-
-    Returns:
-        str: A confirmation message if the replacement succeeded.
 
     Raises:
         ToolError: If filepath or old_str is empty, if old_str is not
@@ -489,6 +489,64 @@ def run_command(command: str, workdir: str = ".") -> dict[str, str | int]:
         "stdout": _truncate_by_end(run_return.stdout, 50),
         "stderr": _truncate_by_end(run_return.stderr, 50),
         "exit_code": run_return.returncode
+    }
+
+
+@mcp.tool()
+def run_tests() -> dict[str, str | int]:
+    """Run the evaluation script of the task (the official tests).
+
+    Returns a dict with "stdout", "stderr" and "exit_code". The test
+    results are in the summary at the end of "stdout": the exit code
+    does NOT tell whether the tests passed (it is 0 even when some
+    fail). Each output is truncated to its last 100 lines.
+
+    The script is killed after 100 seconds. The state of the repository
+    is saved before running it, so that it can be restored if the tests
+    time out: your changes are kept and a message is added to "stderr".
+
+    Raises:
+        ToolError: If the evaluation script is missing or unreadable, or
+            if the state of the repository cannot be saved.
+    """
+    if not SCRIPT_PATHS:
+        raise ToolError("Missing SCRIPT_PATHS environment variable.")
+
+    try:
+        script: str = Path(SCRIPT_PATHS).read_text()
+    except OSError as e:
+        raise ToolError(f"Cannot read the evaluation script: {e}") from e
+    if not script.strip():
+        raise ToolError("No script provided.")
+
+    cmd = ["git", "-c", "core.fileMode=false", "diff", "--binary"]
+
+    diff_result = _run(cmd=cmd)
+    _return_error(diff_result.returncode, diff_result.stderr)
+    saved = diff_result.stdout
+
+    cmd = ["timeout", "-s", "KILL", str(TESTS_TIMEOUT), "bash", "-s"]
+
+    tests_results = _run(cmd=cmd, input=script)
+    if tests_results.returncode == 137:
+        tests_results.stderr += f"\n[Tests killed after {TESTS_TIMEOUT}s"\
+                             " timeout.]"
+        cmd = ["git", "checkout", "HEAD", "--", "."]
+        restore_result = _run(cmd=cmd)
+        if restore_result.returncode != 0:
+            tests_results.stderr += "\n[Warning: could not restore the"\
+                f" repository after timeout: {restore_result.stderr}]"
+        if saved and restore_result.returncode == 0:
+            restore_result = _run(["git", "apply"], input=saved)
+            if restore_result.returncode != 0:
+                tests_results.stderr += "\n[Warning: could not restore the"\
+                    " repository after timeout, your changes are lost, apply"\
+                    f" them again : {restore_result.stderr}]"
+
+    return {
+        "stdout": _truncate_by_end(tests_results.stdout, 100),
+        "stderr": _truncate_by_end(tests_results.stderr, 100),
+        "exit_code": tests_results.returncode
     }
 
 
