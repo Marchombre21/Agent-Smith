@@ -270,7 +270,9 @@ class BenchmarkCli(ABC):
                 llm=llm,
                 sandbox=sandbox,
                 extraction=CodeExtraction.default(),
-                formatter=ObservationFormatter(),
+                formatter=ObservationFormatter(
+                    max_chars=self._settings.max_observation_chars
+                ),
                 conversation=conversation,
                 budget=budget,
                 recorder=recorder,

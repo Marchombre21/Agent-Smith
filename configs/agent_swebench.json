@@ -1,0 +1,11 @@
+{
+    "provider": "mistral",
+    "model_name": "codestral-latest",
+    "max_iterations": 30,
+    "time_margin_seconds": 30,
+    "keep_last_observations": 3,
+    "max_observation_chars": 6000,
+    "transport": "stdio",
+    "address": "uv run python mcp_tools_swebench.py",
+    "sandbox": "configs/sandbox_swebench.json"
+}

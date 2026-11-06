@@ -5,7 +5,7 @@ PROG := sandbox
 MCP_CMD ?= python mcp_tools_mbpp.py
 CONFIG ?= configs/sandbox_template.json
 MCP_URL ?= http://localhost:8000/mcp
-SRCFILES := main.py src/ agent_mbpp/ mcp_tools_*.py
+SRCFILES := main.py src/ agent_mbpp/ agent_swebench/ mcp_tools_*.py
 
 help:
 	@echo "Available commands:"
