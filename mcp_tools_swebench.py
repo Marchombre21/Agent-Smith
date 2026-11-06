@@ -11,6 +11,7 @@ mcp = FastMCP("mcp_tools_swebench")
 testbed_path_temp = os.environ.get("TESTBED_PATH", "")
 CONTAINER_ID = os.environ.get("CONTAINER_ID")
 EXCLUDED_DIRS = [".venv", ".git", "__pycache__"]
+COMMAND_TIMEOUT = 60
 
 if not testbed_path_temp:
     raise ValueError("Missing TESTBED_PATH variable to launch MCP server.")
@@ -38,7 +39,7 @@ def _format_output(output: str) -> str:
 
 
 def _run(cmd: list[str],
-         input: str | None = None,
+         input: str = "",
          workdir: str = TESTBED_PATH) -> CompletedProcess[str]:
     if CONTAINER_ID:
         final_cmd = [
@@ -65,7 +66,7 @@ def _run(cmd: list[str],
     # code. Mimic docker exec (code 127) so callers only check returncode.
     # (e.g. edit_file rollback)
     except FileNotFoundError as e:
-        return CompletedProcess(final_cmd, 127, stderr=str(e))
+        return CompletedProcess(final_cmd, 127, stderr=str(e), stdout="")
 
 
 def _truncate(sentence: str, nb_lines: int, msg: str) -> str:
@@ -77,6 +78,19 @@ def _truncate(sentence: str, nb_lines: int, msg: str) -> str:
 
     final: str = f"\n[Truncated: {nb_lines} of {length_datas} {msg}]"
     new_data = "\n".join(tmp_datas[:nb_lines]) + final
+    return new_data
+
+
+def _truncate_by_end(sentence: str, nb_lines: int) -> str:
+    tmp_datas: list[str] = sentence.splitlines()
+    length_datas = len(tmp_datas)
+
+    if length_datas <= nb_lines:
+        return sentence
+
+    final: str = f"[Truncated: {nb_lines} last lines of {length_datas}]\n"
+    index: int = length_datas - nb_lines
+    new_data = final + "\n".join(tmp_datas[index:])
     return new_data
 
 
@@ -437,21 +451,45 @@ def get_patch() -> str:
 
 
 @mcp.tool()
-def run_command(command: str, workdir: str) -> CompletedProcess[str]:
+def run_command(command: str, workdir: str = ".") -> dict[str, str | int]:
     """Execute a shell command in the targeted workdir. Return the result of
-    the subprocess (CompletedProcess[str]).
+    the subprocess (stdout, stderr and exit_code) in dict format (
+    {
+    'stdout': <stdout>,
+    'stderr': <stderr>,
+    'exit_code': <return_code>,
+    }).
+    If stdout or stderr are too long, they will be truncated by the beginning
+    and only the end of message will be returned.
+    The execution has a timeout to ensure that no blockages can occur.
 
     Args:
         command (str): The shell command in a string
-        workdir (str): The repository where execute the command
+        workdir (str): Directory relative to the testbed (default: testbed
+        root)
     """
 
+    if not command.strip():
+        raise ToolError("The argument 'command' can't be empty and must be"
+                        " a valid command.")
     complete_path: str = _resolve_path(workdir)
 
-    cmd = ["bash", "-c", command]
+    cmd = [
+        "timeout", "-s", "KILL",
+        str(COMMAND_TIMEOUT), "bash", "-c", command
+    ]
 
     run_return = _run(cmd=cmd, workdir=complete_path)
-    return run_return
+
+    if run_return.returncode == 137:
+        run_return.stderr += f"\n[Command killed after {COMMAND_TIMEOUT}s"\
+                              " timeout]"
+
+    return {
+        "stdout": _truncate_by_end(run_return.stdout, 50),
+        "stderr": _truncate_by_end(run_return.stderr, 50),
+        "exit_code": run_return.returncode
+    }
 
 
 if __name__ == "__main__":
