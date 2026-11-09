@@ -9,12 +9,27 @@ argument. It reads one JSON message per line on stdin
 import builtins
 import io
 import json
+import ast
 import traceback
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import ModuleType
 from typing import Any, IO, Mapping, Sequence, NoReturn, TextIO, Callable
+
+RESTRICTED = [
+    "eval",
+    "exec",
+    "compile",
+    "globals",
+    "vars",
+    "getattr",
+    "setattr",
+    "delattr",
+    "breakpoint",
+    "help",
+    "input",
+]
 
 
 class ToolCallError(Exception):
@@ -44,7 +59,7 @@ def my_exit(code: object = None) -> NoReturn:
     raise SystemExit(code)
 
 
-def make_tool(name: str, stdout: TextIO | Any) -> Callable[..., Any]:
+def _make_tool(name: str, stdout: TextIO | Any) -> Callable[..., Any]:
 
     def tool(*args: Any, **kwargs: Any) -> Any:
         stdout.write(
@@ -60,6 +75,33 @@ def make_tool(name: str, stdout: TextIO | Any) -> Callable[..., Any]:
         return answer["result"]
 
     return tool
+
+
+def _check_code(code: str) -> None:
+    """Before execution, an AST parser denies access to any attribute that
+    starts with an underscore, because that's how you can trace back to the
+    actual modules (__globals__, __self__, __subclasses__).
+
+    Args:
+        code (str): The code to parse.
+
+    Raises:
+        PermissionError: The raised error in case of an attribute with _.
+    """
+    parsed_code = ast.parse(code)
+    for node in ast.walk(parsed_code):
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith("_"):
+                raise PermissionError(
+                    f"You are not allowed to access {node.attr} attribute.")
+
+
+def _restrict_builtins(name: str) -> Callable[..., Any]:
+
+    def raiser(*args: Any, **kwargs: Any) -> Any:
+        raise PermissionError(f"You are not allowed to use {name} function.")
+
+    return raiser
 
 
 def main() -> None:
@@ -133,9 +175,11 @@ def main() -> None:
     builtins_dict_copy["__import__"] = check_import
     builtins_dict_copy["exit"] = my_exit
     builtins_dict_copy["quit"] = my_exit
+    for name in RESTRICTED:
+        builtins_dict_copy[name] = _restrict_builtins(name)
 
     for name in list_tools:
-        builtins_dict_copy[name] = make_tool(name, real_stdout)
+        builtins_dict_copy[name] = _make_tool(name, real_stdout)
 
     globals_values = {"__builtins__": builtins_dict_copy}
 
@@ -148,8 +192,13 @@ def main() -> None:
         error, memory_exceeded, answer, interrupt, exit_code = None, False, \
             None, None, None
         try:
-            with redirect_stdout(buffer):
-                exec(code, globals_values)
+            try:
+                _check_code(code)
+            except (SyntaxError, PermissionError) as e:
+                error = "".join(traceback.format_exception_only(type(e), e))
+            if error is None:
+                with redirect_stdout(buffer):
+                    exec(code, globals_values)
         except KeyboardInterrupt:
             interrupt = "KeyboardInterrupt"
         except SystemExit as e:
