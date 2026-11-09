@@ -1,7 +1,11 @@
 """A SWE-bench task: an issue to fix in a real repository."""
 
+from contextlib import contextmanager
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Iterator
 
+from src.cli.container import DockerContainer
 from src.cli.task import BenchmarkTask
 from src.models import SWEBenchTaskInput
 from src.orchestrator.models import RunResult
@@ -20,6 +24,8 @@ class SweBenchTask(BenchmarkTask):
     # First line of a diff written by git; the moulinette rejects a
     # solution that does not look like a patch.
     _DIFF_START = "diff --git "
+    # Where the SWE-bench images keep the repository to fix.
+    _TESTBED_PATH = "/testbed"
 
     def __init__(self, task: SWEBenchTaskInput) -> None:
         """Keep the input of the task.
@@ -61,6 +67,38 @@ class SweBenchTask(BenchmarkTask):
         tests.
         """
         return ""
+
+    @contextmanager
+    def mcp_environment(self) -> Iterator[dict[str, str]]:
+        """Start the task's container and write its evaluation script.
+
+        The MCP server works on the repository inside the container
+        (``docker exec`` on ``CONTAINER_ID``, under ``TESTBED_PATH``),
+        and its ``run_tests`` reads the evaluation script from the file
+        named by ``SCRIPT_PATHS``, on the host. Both are removed when
+        the block ends, whatever ends it: the script file first, then
+        the container.
+
+        Yields:
+            ``CONTAINER_ID``, ``TESTBED_PATH`` and ``SCRIPT_PATHS``.
+
+        Raises:
+            ContainerError: The container cannot be started.
+            OSError: The script file cannot be written.
+        """
+        with DockerContainer(self._task.docker_image) as container, \
+                NamedTemporaryFile(
+                    "w", encoding="utf-8",
+                    prefix="agent-smith-eval-", suffix=".sh",
+                ) as script:
+            script.write(self._task.eval_script)
+            # Written to disk now: the server reads it by its name.
+            script.flush()
+            yield {
+                "CONTAINER_ID": container.container_id,
+                "TESTBED_PATH": self._TESTBED_PATH,
+                "SCRIPT_PATHS": script.name,
+            }
 
     def conclude(
         self, result: RunResult, sandbox: SandboxPort, timeout: float
