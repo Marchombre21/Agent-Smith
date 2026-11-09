@@ -7,7 +7,6 @@ argument. It reads one JSON message per line on stdin
 """
 
 import builtins
-import io
 import json
 import ast
 import traceback
@@ -30,6 +29,20 @@ RESTRICTED = [
     "help",
     "input",
 ]
+
+
+class FalseStdout:
+
+    def __init__(self, real_stdout):
+        self.real_stdout = real_stdout
+
+    def write(self, text):
+        self.real_stdout.write(json.dumps({"exec_stdout": text}) + "\n")
+        self.flush()
+        return len(text)
+
+    def flush(self):
+        self.real_stdout.flush()
 
 
 class ToolCallError(Exception):
@@ -188,7 +201,6 @@ def main() -> None:
         if line == "":
             break
         code = json.loads(line)["code"]
-        buffer = io.StringIO()
         error, memory_exceeded, answer, interrupt, exit_code = None, False, \
             None, None, None
         try:
@@ -197,7 +209,7 @@ def main() -> None:
             except (SyntaxError, PermissionError) as e:
                 error = "".join(traceback.format_exception_only(type(e), e))
             if error is None:
-                with redirect_stdout(buffer):
+                with redirect_stdout(FalseStdout(real_stdout)):
                     exec(code, globals_values)
         except KeyboardInterrupt:
             interrupt = "KeyboardInterrupt"
@@ -220,7 +232,6 @@ def main() -> None:
             error = "".join(traceback.format_exception(type(e), e, tb))
         sys.stdout.write(
             json.dumps({
-                "stdout": buffer.getvalue(),
                 "error": error,
                 "memory_exceeded": memory_exceeded,
                 "answer": answer,

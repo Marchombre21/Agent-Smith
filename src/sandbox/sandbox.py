@@ -39,6 +39,7 @@ class Sandbox(SandboxPort):
         self.proc: Popen[str] | None = None
         self.client: MCPClient | None = None
         self.list_tools: list[Tool] = []
+        self.buffer: str = ""
         if transport and address:
             self.client = MCPClient(
                 transport=transport, address=address, env=env
@@ -133,6 +134,9 @@ class Sandbox(SandboxPort):
                 stdin.flush()
                 limit += time.monotonic() - start
                 continue
+            if "exec_stdout" in answer:
+                self.buffer += answer["exec_stdout"]
+                continue
 
             if answer["interrupt"] is not None:
                 if answer["interrupt"] == "KeyboardInterrupt":
@@ -140,7 +144,7 @@ class Sandbox(SandboxPort):
                 else:
                     raise SystemExit(answer["exit_code"])
             return ExecutionResult(
-                stdout=answer["stdout"],
+                stdout=self.buffer,
                 error=answer["error"],
                 memory_exceeded=answer["memory_exceeded"],
                 final_answer=answer["answer"],
