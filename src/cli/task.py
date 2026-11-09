@@ -1,6 +1,7 @@
 """A task of a benchmark: its data, and what to do with it."""
 
 from abc import ABC, abstractmethod
+from contextlib import AbstractContextManager
 
 from src.orchestrator.models import RunResult
 from src.prompts.base import BenchmarkPrompt
@@ -31,6 +32,22 @@ class BenchmarkTask(ABC):
         It defines what the model may use without writing it (MBPP: the
         given tests). The loop runs it again whenever the sandbox loses
         its variables. An empty string means nothing to run.
+        """
+
+    @abstractmethod
+    def mcp_environment(self) -> AbstractContextManager[dict[str, str]]:
+        """Prepare what the MCP server needs, for the whole run.
+
+        Used as ``with task.mcp_environment() as env:``. Entering
+        prepares the outside world the tools work on (SWE-bench: the
+        Docker container and the evaluation script) and gives the
+        environment variables that tell the MCP server where it is;
+        leaving removes it all, even on an error or SIGTERM. The server
+        reads the variables when it starts, so the sandbox must be
+        opened inside the block.
+
+        Implementations are usually generators decorated with
+        ``contextlib.contextmanager``.
         """
 
     @abstractmethod
