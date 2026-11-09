@@ -18,6 +18,9 @@ class ObservationFormatter:
 
     _NO_OUTPUT = "(no output)"
     _SILENT_RUN = "The code ran without error and printed nothing."
+    # The loop stops right after this step: the model never reads it, but
+    # solution.json does, and must say what really happened.
+    _FINAL_ANSWER = "final_answer() was called: the task ends here."
     _TRUNCATED = "[Output truncated: too long.]"
     _TIMED_OUT = (
         "Execution stopped: time limit reached. The output above is partial."
@@ -70,8 +73,16 @@ class ObservationFormatter:
         clean = result.error is None and not (
             result.timed_out or result.memory_exceeded
         )
-        empty = self._SILENT_RUN if clean else self._NO_OUTPUT
-        parts.append(result.stdout.rstrip("\n") or empty)
+        output = result.stdout.rstrip("\n")
+        if result.final_answer is not None:
+            # What was printed before the call is kept; no "printed
+            # nothing" sentence, the call itself is the outcome.
+            if output:
+                parts.append(output)
+            parts.append(self._FINAL_ANSWER)
+        else:
+            empty = self._SILENT_RUN if clean else self._NO_OUTPUT
+            parts.append(output or empty)
         if result.truncated:
             parts.append(self._TRUNCATED)
         if result.timed_out:

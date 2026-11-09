@@ -1,7 +1,9 @@
 """An MBPP task: one function to write, checked by asserts."""
 
 import json
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 from src.cli.task import BenchmarkTask
 from src.models import MBPPTaskInput
@@ -63,6 +65,14 @@ class MbppTask(BenchmarkTask):
             for test in self._task.test_list
         ]
         return f"{self._TESTS_NAME} = {tests!r}"
+
+    @contextmanager
+    def mcp_environment(self) -> Iterator[dict[str, str]]:
+        """Give no variable: the MBPP tools need nothing outside.
+
+        ``run_tests`` gets the code and the tests as arguments.
+        """
+        yield {}
 
     def conclude(
         self, result: RunResult, sandbox: SandboxPort, timeout: float
