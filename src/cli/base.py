@@ -252,13 +252,18 @@ class BenchmarkCli(ABC):
             KeyError, ValueError: the client cannot be built (see
                 ``RotatingClient.from_provider_url``).
             SandboxError: the sandbox or its MCP server cannot start.
+            ContainerError: the task's Docker container cannot start
+                (SWE-bench).
         """
         budget = TaskBudget(self._limits(), self._started_at, self._clock)
         llm = RotatingClient.from_provider_url(
             url, model, self._registry, self._http
         )
         prompt = task.prompt()
-        with self._open_sandbox() as sandbox:
+        # The MCP server reads its variables when it starts: the task's
+        # environment is opened first, and closed after the sandbox.
+        with task.mcp_environment() as env, \
+                self._open_sandbox(env) as sandbox:
             system_prompt = prompt.system_prompt(sandbox.manual())
             recorder.set_system_prompt(system_prompt)
             conversation = Conversation(
@@ -289,16 +294,24 @@ class BenchmarkCli(ABC):
             error=result.error,
         )
 
-    def _open_sandbox(self) -> Sandbox:
+    def _open_sandbox(self, env: dict[str, str]) -> Sandbox:
         """Build the sandbox described by the settings, not started yet.
 
         Use it in a ``with`` block: entering starts the worker and
         connects the MCP server, leaving stops both.
+
+        Args:
+            env: Variables for the MCP server, from
+                ``BenchmarkTask.mcp_environment``. The MCP library adds
+                them to a short safe list (``HOME``, ``PATH``...), not
+                to our whole environment: the API keys stay out of the
+                server.
         """
         return Sandbox(
             self._settings.sandbox,
             self._settings.transport,
             self._settings.address,
+            env=env,
         )
 
     @staticmethod
