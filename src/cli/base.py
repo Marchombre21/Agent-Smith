@@ -23,6 +23,7 @@ from src.orchestrator.models import TaskLimits
 from src.orchestrator.observation import ObservationFormatter
 from src.orchestrator.orchestrator import Orchestrator
 from src.orchestrator.recorder import StepRecorder
+from src.orchestrator.repeats import RepeatDetector
 from src.sandbox.sandbox import Sandbox
 
 
@@ -281,6 +282,7 @@ class BenchmarkCli(ABC):
                 conversation=conversation,
                 budget=budget,
                 recorder=recorder,
+                repeats=RepeatDetector(),
                 setup_code=task.setup_code(),
             )
             result = loop.run()

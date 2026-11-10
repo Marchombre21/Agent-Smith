@@ -30,6 +30,10 @@ class ObservationFormatter:
     _STATE_RESET = (
         "Variables from previous steps were lost: define them again."
     )
+    _REPEATED = (
+        "Same code and same result as step {step}. Sending it again will "
+        "not help: try something different."
+    )
     _CUT_MARKER = "\n[... {cut} characters cut ...]\n"
     # Characters kept free for the marker, so the result fits max_chars.
     _MARKER_ROOM = 40
@@ -56,16 +60,21 @@ class ObservationFormatter:
         self,
         extraction: ExtractionResult,
         result: Optional[ExecutionResult],
+        repeat_of: Optional[int] = None,
     ) -> str:
         """Build the observation text.
 
         Extraction warnings come first, so the model learns what was
-        assumed about its code before reading what the code did.
+        assumed about its code before reading what the code did. The
+        repetition notice comes last: a long observation keeps its end.
 
         Args:
             extraction: What was found in the model's answer.
             result: What the sandbox reported; None when no code was
                 run, in which case the extraction warnings say why.
+            repeat_of: Number of the earlier step that had the same code
+                and the same result (``RepeatDetector``), or None. Not
+                used when no code was run.
         """
         parts: List[str] = list(extraction.warnings)
         if result is None:
@@ -94,6 +103,8 @@ class ObservationFormatter:
             parts.append(result.error.rstrip("\n"))
         if result.state_reset:
             parts.append(self._STATE_RESET)
+        if repeat_of is not None:
+            parts.append(self._REPEATED.format(step=repeat_of))
         return self._shorten("\n".join(parts))
 
     def _shorten(self, text: str) -> str:
