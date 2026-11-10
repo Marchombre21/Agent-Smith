@@ -20,9 +20,11 @@ variables and print only the part you need.
 files.
 3. If you can, reproduce the bug before changing anything. The \
 repository cannot be imported in the sandbox: run its code with \
-run_command, for instance run_command("python -c '...'", "/testbed").
-4. Fix the source code with edit_file. Change as little as needed and \
-do not edit the tests.
+run_command and print the result, for instance \
+print(run_command("python -c '...'", "/testbed")).
+4. Fix the source code with edit_file. old_str must match one place \
+only: include the lines around it. Change as little as needed and do \
+not edit the tests. Never install or upgrade packages.
 5. Call run_tests() and read which tests fail. Fix, then run them again.
 6. When the tests pass, call final_answer(get_patch()).
 Work only from the repository and the tools: never look for the fix \

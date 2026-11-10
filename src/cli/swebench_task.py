@@ -26,6 +26,10 @@ class SweBenchTask(BenchmarkTask):
     _DIFF_START = "diff --git "
     # Where the SWE-bench images keep the repository to fix.
     _TESTBED_PATH = "/testbed"
+    # The container removes itself after this long if nobody did: the
+    # task's 900 s limit, the 10 s before SIGKILL, and a margin. It never
+    # cuts a run, the moulinette stops the agent before.
+    _CONTAINER_LIFETIME_SECONDS = 960
 
     def __init__(self, task: SWEBenchTaskInput) -> None:
         """Keep the input of the task.
@@ -86,7 +90,9 @@ class SweBenchTask(BenchmarkTask):
             ContainerError: The container cannot be started.
             OSError: The script file cannot be written.
         """
-        with DockerContainer(self._task.docker_image) as container, \
+        with DockerContainer(
+            self._task.docker_image, self._CONTAINER_LIFETIME_SECONDS
+        ) as container, \
                 NamedTemporaryFile(
                     "w", encoding="utf-8",
                     prefix="agent-smith-eval-", suffix=".sh",
