@@ -1,5 +1,6 @@
 """Spot a step that sends the same code and gets the same result again."""
 
+import re
 from typing import Optional
 
 
@@ -13,15 +14,25 @@ class RepeatDetector:
 
     Two codes that differ only by indentation, blank lines or trailing
     spaces count as the same: the model often resends a call with its
-    spacing changed.
+    spacing changed. Results are compared without their noise (random
+    seeds, durations): two runs of the same tests never print the same
+    seed. Counts stay: "44 passed" then "45 passed" is progress, not a
+    repeat.
     """
+
+    # What changes from one run to the next with nothing new to learn.
+    _NOISE = re.compile(
+        r"random seed:\s*\d+"
+        r"|PYTHONHASHSEED=\d+"
+        r"|\b\d+(?:\.\d+)?\s?(?:seconds|s)\b"
+    )
 
     def __init__(self) -> None:
         """Start with no step seen."""
-        # Normalised code -> (step, observation) of its latest run.
+        # Normalised code -> (step, result without noise) of its latest run.
         self._seen: dict[str, tuple[int, str]] = {}
 
-    def check(self, step: int, code: str, observation: str) -> Optional[int]:
+    def check(self, step: int, code: str, result: str) -> Optional[int]:
         """Say whether this step repeats the latest run of the same code.
 
         The step is remembered either way, so a third identical step is
@@ -30,7 +41,9 @@ class RepeatDetector:
         Args:
             step: Number of the step that has just run.
             code: The code the model sent at that step.
-            observation: What that code gave, as the model would read it.
+            result: What that code gave: the raw output and error of
+                the sandbox, before any cut or sentence is added (the
+                cut moves with the length of the output).
 
         Returns:
             The number of the earlier step with the same code and the
@@ -38,8 +51,9 @@ class RepeatDetector:
         """
         key = self._normalize(code)
         earlier = self._seen.get(key)
-        self._seen[key] = (step, observation)
-        if earlier is not None and earlier[1] == observation:
+        outcome = self._NOISE.sub("#", result)
+        self._seen[key] = (step, outcome)
+        if earlier is not None and earlier[1] == outcome:
             return earlier[0]
         return None
 

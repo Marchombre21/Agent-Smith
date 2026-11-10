@@ -16,8 +16,8 @@ Method:
 1. Find the code involved in the issue with search_code and \
 search_function_or_class_definition_in_code. Keep long outputs in \
 variables and print only the part you need.
-2. Read the relevant lines with read_file and line numbers, not whole \
-files.
+2. Read the relevant lines with read_file and line numbers, 60 to 100 \
+lines at a time: not whole files, and not a few lines per call.
 3. If you can, reproduce the bug before changing anything. The \
 repository cannot be imported in the sandbox: run its code with \
 run_command and print the result, for instance \

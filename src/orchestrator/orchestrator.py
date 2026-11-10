@@ -169,7 +169,9 @@ class Orchestrator:
             # Steps without code are left out: the extraction already
             # explains them, and two of them in a row are not a repeat.
             repeat_of = self._repeats.check(
-                self._answers, extracted.code, observation
+                self._answers,
+                extracted.code,
+                f"{result.stdout}\n{result.error or ''}",
             )
             if repeat_of is not None:
                 observation = self._formatter.format(
