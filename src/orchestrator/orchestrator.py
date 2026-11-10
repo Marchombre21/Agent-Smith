@@ -10,6 +10,7 @@ from src.orchestrator.conversation import Conversation
 from src.orchestrator.models import RunResult
 from src.orchestrator.observation import ObservationFormatter
 from src.orchestrator.recorder import StepRecorder
+from src.orchestrator.repeats import RepeatDetector
 from src.sandbox_port import ExecutionResult, SandboxError, SandboxPort
 
 
@@ -39,6 +40,7 @@ class Orchestrator:
         conversation: Conversation,
         budget: TaskBudget,
         recorder: StepRecorder,
+        repeats: RepeatDetector,
         setup_code: str = "",
     ) -> None:
         """Keep the parts of the loop.
@@ -52,6 +54,8 @@ class Orchestrator:
             budget: Limits of the task, with the clock already started.
             recorder: Keeps the metrics of each step; the CLI reads it
                 afterwards to write ``solution.json``.
+            repeats: Tells when a step sends the same code as an earlier
+                one and gets the same result, so the model is told.
             setup_code: Run in the sandbox before the first step, and
                 again after the sandbox lost its variables (MBPP: the
                 given tests as ``TESTS``); empty for nothing.
@@ -66,6 +70,9 @@ class Orchestrator:
         self._conversation = conversation
         self._budget = budget
         self._recorder = recorder
+        self._repeats = repeats
+        # Answers the model has written so far: the "step" of a repeat.
+        self._answers = 0
 
     def run(self) -> RunResult:
         """Loop over steps until an answer, a limit or a failure.
@@ -135,6 +142,7 @@ class Orchestrator:
             raise
         self._budget.record_step(response.input_tokens, response.output_tokens)
         self._conversation.add_answer(response.text)
+        self._answers += 1
         extracted = self._extraction.extract(response.text)
         result: Optional[ExecutionResult] = None
         if extracted.code is not None:
@@ -157,6 +165,18 @@ class Orchestrator:
         if result is not None and result.state_reset and self._setup_code:
             self._ready = False
         observation = self._formatter.format(extracted, result)
+        if extracted.code is not None and result is not None:
+            # Steps without code are left out: the extraction already
+            # explains them, and two of them in a row are not a repeat.
+            repeat_of = self._repeats.check(
+                self._answers,
+                extracted.code,
+                f"{result.stdout}\n{result.error or ''}",
+            )
+            if repeat_of is not None:
+                observation = self._formatter.format(
+                    extracted, result, repeat_of=repeat_of
+                )
         self._conversation.add_observation(observation)
         self._recorder.record(response, extracted.code, observation)
         return result.final_answer if result is not None else None

@@ -16,14 +16,18 @@ Method:
 1. Find the code involved in the issue with search_code and \
 search_function_or_class_definition_in_code. Keep long outputs in \
 variables and print only the part you need.
-2. Read the relevant lines with read_file and line numbers, not whole \
-files.
+2. Read the relevant lines with read_file and line numbers, 60 to 100 \
+lines at a time: not whole files, and not a few lines per call.
 3. If you can, reproduce the bug before changing anything. The \
 repository cannot be imported in the sandbox: run its code with \
-run_command, for instance run_command("python -c '...'", "/testbed").
-4. Fix the source code with edit_file. Change as little as needed and \
-do not edit the tests.
-5. Call run_tests() and read which tests fail. Fix, then run them again.
+run_command and print the result, for instance \
+print(run_command("python -c '...'", "/testbed")).
+4. Fix the source code with edit_file. old_str must match one place \
+only: include the lines around it. Change as little as needed and do \
+not edit the tests. Never install or upgrade packages.
+5. Run the tests and print only the end of the report, where the \
+summary is: r = run_tests(); print(r["stdout"][-1500:]). Read which \
+tests fail. Fix, then run them again.
 6. When the tests pass, call final_answer(get_patch()).
 Work only from the repository and the tools: never look for the fix \
 in a pull request, an issue or any other outside source.
@@ -45,7 +49,8 @@ Observation: 42: def parse_date(text):
 Thought: The year needs 4 digits: %Y, not %y. I fix it and run the tests.
 ```python
 print(edit_file("/testbed/pkg/dates.py", '"%d/%m/%y"', '"%d/%m/%Y"'))
-print(run_tests())
+r = run_tests()
+print(r["stdout"][-1500:])
 ```<end_code>
 Observation: ... all tests passed
 Thought: The tests pass.
