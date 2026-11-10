@@ -46,13 +46,11 @@ class FalseStdout:
 
 
 class ToolCallError(Exception):
-    """Raised when an error occured in MCP server during code execution.
-    """
+    """Raised when an error occured in MCP server during code execution."""
 
 
 class FinalAnswerSignal(BaseException):
-    """Raised by final_answer() to stop the execution
-    """
+    """Raised by final_answer() to stop the execution"""
 
 
 def final_answer(code: Any) -> NoReturn:
@@ -76,11 +74,11 @@ def _make_tool(name: str, stdout: TextIO | Any) -> Callable[..., Any]:
 
     def tool(*args: Any, **kwargs: Any) -> Any:
         stdout.write(
-            json.dumps({
-                "tool_call": name,
-                "args": list(args),
-                "kwargs": kwargs
-            }) + "\n")
+            json.dumps(
+                {"tool_call": name, "args": list(args), "kwargs": kwargs}
+            )
+            + "\n"
+        )
         stdout.flush()
         answer = json.loads(sys.stdin.readline())
         if answer["error"] is not None:
@@ -106,7 +104,8 @@ def _check_code(code: str) -> None:
         if isinstance(node, ast.Attribute):
             if node.attr.startswith("_"):
                 raise PermissionError(
-                    f"You are not allowed to access {node.attr} attribute.")
+                    f"You are not allowed to access {node.attr} attribute."
+                )
 
 
 def _restrict_builtins(name: str) -> Callable[..., Any]:
@@ -136,11 +135,11 @@ def main() -> None:
     builtins_dict_copy["final_answer"] = final_answer
 
     def check_import(
-            name: str,
-            globals: Mapping[str, object] | None = None,
-            locals: Mapping[str, object] | None = None,
-            fromlist: Sequence[str] | None = (),
-            level: int = 0,
+        name: str,
+        globals: Mapping[str, object] | None = None,
+        locals: Mapping[str, object] | None = None,
+        fromlist: Sequence[str] | None = (),
+        level: int = 0,
     ) -> ModuleType:
         """Import a module only if it is in the authorized imports.
 
@@ -159,8 +158,9 @@ def main() -> None:
         authorized = config["authorized_imports"]
         if name not in authorized and pattern not in authorized:
             raise ImportError(f"Import of '{name}' is not allowed")
-        module: ModuleType = real_import(name, globals, locals, fromlist,
-                                         level)
+        module: ModuleType = real_import(
+            name, globals, locals, fromlist, level
+        )
         return module
 
     def check_access_files(path: str, *args: Any, **kwargs: Any) -> IO[Any]:
@@ -201,8 +201,13 @@ def main() -> None:
         if line == "":
             break
         code = json.loads(line)["code"]
-        error, memory_exceeded, answer, interrupt, exit_code = None, False, \
-            None, None, None
+        error, memory_exceeded, answer, interrupt, exit_code = (
+            None,
+            False,
+            None,
+            None,
+            None,
+        )
         try:
             try:
                 _check_code(code)
@@ -231,13 +236,17 @@ def main() -> None:
             tb = e.__traceback__.tb_next if e.__traceback__ else None
             error = "".join(traceback.format_exception(type(e), e, tb))
         sys.stdout.write(
-            json.dumps({
-                "error": error,
-                "memory_exceeded": memory_exceeded,
-                "answer": answer,
-                "interrupt": interrupt,
-                "exit_code": exit_code
-            }) + "\n")
+            json.dumps(
+                {
+                    "error": error,
+                    "memory_exceeded": memory_exceeded,
+                    "answer": answer,
+                    "interrupt": interrupt,
+                    "exit_code": exit_code,
+                }
+            )
+            + "\n"
+        )
         sys.stdout.flush()
 
 

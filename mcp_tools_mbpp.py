@@ -9,7 +9,7 @@ mcp = FastMCP("mcp_tools_mbpp")
 
 @mcp.tool()
 def run_tests(code: str, test_list: list[str]) -> str:
-    '''
+    """
     Execute passed code and test assertions with the result. The function
     returns a json formatted string with success True/False, a message and an
     output.
@@ -17,7 +17,7 @@ def run_tests(code: str, test_list: list[str]) -> str:
     Args:
         code (str): The code to execute.
         test_list (list[str]): List of tests the result code is tested with.
-    '''
+    """
     if len(test_list) == 0:
         return json.dumps(
             {
@@ -29,10 +29,12 @@ def run_tests(code: str, test_list: list[str]) -> str:
     for test in test_list:
         try:
             full_code = code + "\n" + test + "\n"
-            result_test = subprocess.run([sys.executable, "-c", full_code],
-                                         capture_output=True,
-                                         text=True,
-                                         timeout=3)
+            result_test = subprocess.run(
+                [sys.executable, "-c", full_code],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
         except TimeoutExpired:
             result = {
                 "success": False,
