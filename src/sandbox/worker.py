@@ -1,9 +1,18 @@
 """Worker process of the sandbox: executes untrusted code in isolation.
 
-Launched by 'Sandbox.start()' with the sandbox config as a JSON
-argument. It reads one JSON message per line on stdin
-('{"code": ...}') and answers one JSON line per execution on stdout
-('{"stdout": ..., "error": ..., "memory_exceeded": ...}').
+Launched by 'Sandbox.start()' with the sandbox config and the names of
+the MCP tools as JSON arguments. It talks with the parent with one JSON
+message per line:
+
+- parent -> worker: '{"code": ...}', the code to execute.
+- worker -> parent, during the execution:
+    - '{"exec_stdout": ...}' for each write() of the code, sent at once
+      so that the output survives if the worker is killed;
+    - '{"tool_call": ..., "args": ..., "kwargs": ...}' when the code
+      calls an MCP tool; the worker then waits for the parent's answer
+      '{"result": ..., "error": ...}' on stdin.
+- worker -> parent, at the end: '{"error": ..., "memory_exceeded": ...,
+  "answer": ..., "interrupt": ..., "exit_code": ...}'.
 """
 
 import builtins
@@ -32,16 +41,19 @@ RESTRICTED = [
 
 
 class FalseStdout:
+    """Replace the real_stdout to send results at each write() rather than as a
+    single batch. To recover partial data in the event of a kill.
+    """
 
-    def __init__(self, real_stdout):
+    def __init__(self, real_stdout: IO[str]) -> None:
         self.real_stdout = real_stdout
 
-    def write(self, text):
+    def write(self, text: str) -> int:
         self.real_stdout.write(json.dumps({"exec_stdout": text}) + "\n")
         self.flush()
         return len(text)
 
-    def flush(self):
+    def flush(self) -> None:
         self.real_stdout.flush()
 
 
