@@ -61,6 +61,10 @@ class ToolCallError(Exception):
     """Raised when an error occured in MCP server during code execution."""
 
 
+class ResourceError(Exception):
+    """Raised when an error occured in MCP server during resource retrieval."""
+
+
 class FinalAnswerSignal(BaseException):
     """Raised by final_answer() to stop the execution"""
 
@@ -100,6 +104,20 @@ def _make_tool(name: str, stdout: TextIO | Any) -> Callable[..., Any]:
     return tool
 
 
+def _make_read_resources(stdout: TextIO | Any) -> Callable[[str], str]:
+    def read_resource(uri: str) -> Any:
+        if uri == "" or not isinstance(uri, str):
+            raise ResourceError("uri can't be empty and must be a string.")
+        stdout.write(json.dumps({"resource_call": uri}) + "\n")
+        stdout.flush()
+        answer = json.loads(sys.stdin.readline())
+        if answer["error"] is not None:
+            raise ResourceError(answer["error"])
+        return answer["result"]
+
+    return read_resource
+
+
 def _check_code(code: str) -> None:
     """Before execution, an AST parser denies access to any attribute that
     starts with an underscore, because that's how you can trace back to the
@@ -126,6 +144,18 @@ def _restrict_builtins(name: str) -> Callable[..., Any]:
         raise PermissionError(f"You are not allowed to use {name} function.")
 
     return raiser
+
+
+def _format_tb(e: BaseException) -> list[str]:
+    tb = e.__traceback__
+    new_list = filter(
+        lambda x: x.filename != __file__, traceback.extract_tb(tb)
+    )
+
+    new_tb: list[str] = ["Traceback (most recent call last):\n"]
+    new_tb.extend(traceback.format_list(new_list))
+    new_tb.extend(traceback.format_exception_only(type(e), e))
+    return new_tb
 
 
 def main() -> None:
@@ -200,6 +230,7 @@ def main() -> None:
     builtins_dict_copy["__import__"] = check_import
     builtins_dict_copy["exit"] = my_exit
     builtins_dict_copy["quit"] = my_exit
+    builtins_dict_copy["read_resource"] = _make_read_resources(real_stdout)
     for name in RESTRICTED:
         builtins_dict_copy[name] = _restrict_builtins(name)
 
@@ -243,10 +274,10 @@ def main() -> None:
         except FinalAnswerSignal as e:
             answer = str(e.args[0])
         except Exception as e:
-            # Skip the first frame: it is the exec() call of the worker.
-            # It is useless for the LLM and reveals the host file path.
-            tb = e.__traceback__.tb_next if e.__traceback__ else None
-            error = "".join(traceback.format_exception(type(e), e, tb))
+            # Remove the worker's own frames (exec() call, tool and resource
+            # wrappers): useless for the LLM and they reveal the host path.
+            tb = _format_tb(e)
+            error = "".join(tb)
         sys.stdout.write(
             json.dumps(
                 {

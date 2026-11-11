@@ -3,7 +3,7 @@ import sys
 import time
 
 from src.sandbox_port import ExecutionResult, SandboxError, SandboxPort
-from typing import Any, IO, Literal
+from typing import Any, IO, Literal, Callable
 from threading import Thread
 from queue import Queue, Empty
 from src.models import SandboxConfig
@@ -11,8 +11,8 @@ from pathlib import Path
 from resource import RLIMIT_AS, setrlimit
 from subprocess import PIPE, Popen, TimeoutExpired
 from src.sandbox.mcp_client import MCPClient
-from mcp.types import Tool
-from src.sandbox.errors import ToolExecutionError
+from mcp.types import Tool, ResourceTemplate, Resource
+from src.sandbox.errors import ToolExecutionError, ResourcesError
 from src.sandbox.manual import ManualMaker
 
 # Maximum number of characters of stdout returned for one execution.
@@ -47,6 +47,8 @@ class Sandbox(SandboxPort):
         self.proc: Popen[str] | None = None
         self.client: MCPClient | None = None
         self.list_tools: list[Tool] = []
+        self.list_resources: list[Resource] = []
+        self.list_resources_temp: list[ResourceTemplate] = []
         self.monitor: Thread | None = None
         self.messages: Queue[str] = Queue()
         if transport and address:
@@ -89,6 +91,20 @@ class Sandbox(SandboxPort):
             target=self._reader, args=(stdout, self.messages), daemon=True
         )
         self.monitor.start()
+
+    @staticmethod
+    def _server_call(
+        limit: float,
+        function: Callable[..., dict[str, Any]],
+        stdin: IO[str],
+        answer: dict[str, Any],
+    ) -> float:
+        start = time.monotonic()
+        response = function(request=answer)
+        stdin.write(json.dumps(response) + "\n")
+        stdin.flush()
+        limit += time.monotonic() - start
+        return limit
 
     @staticmethod
     def _truncate(part1: str, part2: str, length: int) -> str:
@@ -248,11 +264,20 @@ class Sandbox(SandboxPort):
 
             answer = json.loads(brut_answer)
             if "tool_call" in answer:
-                start = time.monotonic()
-                response = self._handle_call_tool(request=answer)
-                stdin.write(json.dumps(response) + "\n")
-                stdin.flush()
-                limit += time.monotonic() - start
+                limit = self._server_call(
+                    limit=limit,
+                    function=self._handle_call_tool,
+                    stdin=stdin,
+                    answer=answer,
+                )
+                continue
+            if "resource_call" in answer:
+                limit = self._server_call(
+                    limit=limit,
+                    function=self._handle_resources_call,
+                    stdin=stdin,
+                    answer=answer,
+                )
                 continue
             if "exec_stdout" in answer:
                 if length < HALF_OUTPUT_CHARS:
@@ -284,6 +309,18 @@ class Sandbox(SandboxPort):
                 memory_exceeded=answer["memory_exceeded"],
                 final_answer=answer["answer"],
             )
+
+    def _handle_resources_call(
+        self, request: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self.client is None:
+            raise SandboxError("MCP server isn't connected")
+        uri: str = request["resource_call"]
+        try:
+            response = self.client.read_resource(uri)
+        except ResourcesError as e:
+            return {"result": None, "error": str(e)}
+        return {"result": response, "error": None}
 
     def _handle_call_tool(self, request: dict[str, Any]) -> dict[str, Any]:
 
@@ -324,6 +361,9 @@ class Sandbox(SandboxPort):
         if self.client is not None:
             self.client.connect()
             self.list_tools = self.client.get_tools()
+            self.list_resources, self.list_resources_temp = (
+                self.client.get_resources()
+            )
         self.start()
         return self
 
@@ -384,5 +424,10 @@ class Sandbox(SandboxPort):
         """Return a string that describes all availables tools with their
         signature and description.
         """
-        manual_maker = ManualMaker(self.list_tools, self.config)
+        manual_maker = ManualMaker(
+            self.list_tools,
+            self.config,
+            self.list_resources,
+            self.list_resources_temp,
+        )
         return manual_maker.construct()
