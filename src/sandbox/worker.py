@@ -158,6 +158,55 @@ def _format_tb(e: BaseException) -> list[str]:
     return new_tb
 
 
+def _building_module(
+    module: ModuleType,
+    auth_imports: list[str],
+    checked_modules: dict[str, ModuleType],
+) -> ModuleType:
+    """Checks whether the module has already been verified. If not, recreates
+    an attribute dictionary from the existing one by filtering out attributes
+    that correspond to unauthorized modules. Operates recursively by applying
+    the process to the dictionary's submodules. Returns a new module that is a
+    copy of the original but with a cleaned-up attribute dictionary.
+    """
+    checked_mod = checked_modules.get(module.__name__)
+    if checked_mod is not None:
+        return checked_mod
+    new_module: ModuleType = ModuleType(module.__name__, module.__doc__)
+    checked_modules[new_module.__name__] = new_module
+    authorized_attr: dict[str, Any] = {
+        x: (
+            _building_module(v, auth_imports, checked_modules)
+            if isinstance(v, ModuleType)
+            else v
+        )
+        for x, v in module.__dict__.items()
+        if _is_allowed(v, auth_imports)
+    }
+    new_module.__dict__.update(authorized_attr)
+    return new_module
+
+
+def _is_allowed(attribut: Any, auth_imports: list[str]) -> bool:
+    """Check if an attribute is a module and if he is in authorized imports.
+
+    Args:
+        attribut (Any): The attribute found in attributes list of a module
+        auth_imports (list[str]): All the authorized import in a list of
+        strings
+
+    Returns:
+        bool: True if authorized, false otherwise
+    """
+    if isinstance(attribut, ModuleType):
+        name = attribut.__name__
+        pattern = f"{name.split('.')[0]}.*"
+        if name not in auth_imports and pattern not in auth_imports:
+            return False
+
+    return True
+
+
 def main() -> None:
     """Run the execution loop of the worker.
 
@@ -196,6 +245,7 @@ def main() -> None:
         Raises:
             ImportError: If the module is not allowed.
         """
+        already_check_modules: dict[str, ModuleType] = {}
         pattern = f"{name.split('.')[0]}.*"
         authorized = config["authorized_imports"]
         if name not in authorized and pattern not in authorized:
@@ -203,7 +253,11 @@ def main() -> None:
         module: ModuleType = real_import(
             name, globals, locals, fromlist, level
         )
-        return module
+        return _building_module(
+            module=module,
+            auth_imports=authorized,
+            checked_modules=already_check_modules,
+        )
 
     def check_access_files(path: str, *args: Any, **kwargs: Any) -> IO[Any]:
         """Open a file only if it is inside an allowed directory.
