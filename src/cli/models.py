@@ -43,6 +43,11 @@ class AgentSettings(BaseModel):
         description="Longest observation sent to the LLM; a longer one "
         "keeps its start and its end (ObservationFormatter)",
     )
+    detect_repeats: bool = Field(
+        default=True,
+        description="Tell the LLM when a step repeats an earlier one "
+        "(RepeatDetector); False is only for the ablation",
+    )
     transport: Optional[Literal["stdio", "http"]] = Field(
         default=None, description="How the sandbox reaches the MCP server"
     )

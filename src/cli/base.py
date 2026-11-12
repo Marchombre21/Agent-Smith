@@ -282,7 +282,9 @@ class BenchmarkCli(ABC):
                 conversation=conversation,
                 budget=budget,
                 recorder=recorder,
-                repeats=RepeatDetector(),
+                repeats=RepeatDetector(
+                    enabled=self._settings.detect_repeats
+                ),
                 setup_code=task.setup_code(),
             )
             result = loop.run()

@@ -27,8 +27,14 @@ class RepeatDetector:
         r"|\b\d+(?:\.\d+)?\s?(?:seconds|s)\b"
     )
 
-    def __init__(self) -> None:
-        """Start with no step seen."""
+    def __init__(self, enabled: bool = True) -> None:
+        """Start with no step seen.
+
+        Args:
+            enabled: False turns the detector off (``check`` never
+                reports a repeat). Used by the ablation of the detector.
+        """
+        self._enabled = enabled
         # Normalised code -> (step, result without noise) of its latest run.
         self._seen: dict[str, tuple[int, str]] = {}
 
@@ -47,8 +53,11 @@ class RepeatDetector:
 
         Returns:
             The number of the earlier step with the same code and the
-            same result, or None if this is new or the result differs.
+            same result, or None if this is new, the result differs or
+            the detector is off.
         """
+        if not self._enabled:
+            return None
         key = self._normalize(code)
         earlier = self._seen.get(key)
         outcome = self._NOISE.sub("#", result)
