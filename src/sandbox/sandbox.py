@@ -1,10 +1,11 @@
 import json
-import select
 import sys
 import time
 
 from src.sandbox_port import ExecutionResult, SandboxError, SandboxPort
 from typing import Any, IO, Literal
+from threading import Thread
+from queue import Queue, Empty
 from src.models import SandboxConfig
 from pathlib import Path
 from resource import RLIMIT_AS, setrlimit
@@ -13,6 +14,13 @@ from src.sandbox.mcp_client import MCPClient
 from mcp.types import Tool
 from src.sandbox.errors import ToolExecutionError
 from src.sandbox.manual import ManualMaker
+
+# Maximum number of characters of stdout returned for one execution.
+# Only the beginning and the end are kept (half each): the middle is
+# counted but never stored, so the parent's memory stays bounded even
+# if the code prints without stopping.
+MAX_OUTPUT_CHARS = 7000
+HALF_OUTPUT_CHARS = MAX_OUTPUT_CHARS // 2
 
 
 class Sandbox(SandboxPort):
@@ -39,6 +47,8 @@ class Sandbox(SandboxPort):
         self.proc: Popen[str] | None = None
         self.client: MCPClient | None = None
         self.list_tools: list[Tool] = []
+        self.monitor: Thread | None = None
+        self.messages: Queue[str] = Queue()
         if transport and address:
             self.client = MCPClient(
                 transport=transport, address=address, env=env
@@ -59,7 +69,6 @@ class Sandbox(SandboxPort):
             raise SandboxError(f"Worker not found: {worker}")
         max_mem_mo = self.memory * 1024 * 1024
         names_list: str = json.dumps([tool.name for tool in self.list_tools])
-        # print(self.manual())
         self.proc = Popen(
             [
                 sys.executable,
@@ -74,6 +83,94 @@ class Sandbox(SandboxPort):
             start_new_session=True,
             preexec_fn=lambda: setrlimit(RLIMIT_AS, (max_mem_mo, max_mem_mo)),
         )
+        _, _, stdout = self._pipes
+        self.messages = Queue()
+        self.monitor = Thread(
+            target=self._reader, args=(stdout, self.messages), daemon=True
+        )
+        self.monitor.start()
+
+    @staticmethod
+    def _truncate(part1: str, part2: str, length: int) -> str:
+        """Join the kept beginning and end of the stdout.
+
+        If more characters were printed than MAX_OUTPUT_CHARS, a marker
+        giving the number of characters removed is put between the two
+        parts.
+
+        Args:
+            part1: First characters of the stdout (at most
+                HALF_OUTPUT_CHARS).
+            part2: Last characters of the stdout (at most
+                HALF_OUTPUT_CHARS).
+            length: Total number of characters printed by the code.
+
+        Returns:
+            The stdout to give to the agent, possibly truncated.
+        """
+        nb_truncate = length - MAX_OUTPUT_CHARS
+        if nb_truncate > 0:
+            msg: str = (
+                f"[Truncated]: {nb_truncate} characters on a"
+                f" total of {length}."
+            )
+            return f"{part1}...\n{msg}\n...{part2}"
+        return part1 + part2
+
+    def _reader(self, stdout: IO[str], queue: Queue[str]) -> None:
+        """A thread monitor routine responsible for reading the worker's output
+        and triggering the sentinel when worker is closed (timeout, kill or
+        normal cause).
+
+        Args:
+            stdout (IO[str]): Pipe from worker
+            queue (Queue[str]): The queue where the thread stores the worker's
+            stdout.
+        """
+        while True:
+            brut_answer: str = stdout.readline()
+            queue.put(brut_answer)
+            if brut_answer == "":
+                break
+
+    def _format_part_one(self, msg: str, part1: str) -> tuple[str, str]:
+        """Add a new piece of stdout while the beginning is not full.
+
+        The piece fills the beginning; what does not fit goes to the
+        end, which keeps only its last characters.
+
+        Args:
+            msg: Text just printed by the code.
+            part1: Beginning of the stdout received so far.
+
+        Returns:
+            The new beginning and the new end of the stdout.
+        """
+        remain_space: int = HALF_OUTPUT_CHARS - len(part1)
+
+        if remain_space > len(msg):
+            return (part1 + msg, "")
+        else:
+            part1 += msg[:remain_space]
+            part2 = self._format_part_two(msg[remain_space:])
+            return (part1, part2)
+
+    @staticmethod
+    def _format_part_two(msg: str) -> str:
+        """Keep only the last HALF_OUTPUT_CHARS characters of text.
+
+        Called after each addition to the end of the stdout, so that it
+        never grows beyond the limit (sliding window).
+
+        Args:
+            msg: End of the stdout with the text just printed added.
+
+        Returns:
+            The last characters of msg, or msg itself if short enough.
+        """
+        if len(msg) > HALF_OUTPUT_CHARS:
+            return msg[-HALF_OUTPUT_CHARS:]
+        return msg
 
     def execute(
         self, code: str, timeout: float | None = None
@@ -99,30 +196,54 @@ class Sandbox(SandboxPort):
         Raises:
             SandboxError: If the sandbox is not started.
         """
-        _, stdin, stdout = self._pipes
+
+        exec_stdout_part1: str = ""
+        exec_stdout_part2: str = ""
+        length = 0
+
         limit = (
             self.max_time if timeout is None else min(timeout, self.max_time)
         ) + time.monotonic()
-        stdin.write(json.dumps({"code": code}) + "\n")
-        stdin.flush()
+        _, stdin, _ = self._pipes
+        try:
+            stdin.write(json.dumps({"code": code}) + "\n")
+            stdin.flush()
+        except BrokenPipeError:
+            exit_code = self._restart(kill=False)
+            return ExecutionResult(
+                stdout=exec_stdout_part1,
+                state_reset=True,
+                error=f"Worker process exited with code {exit_code}.",
+            )
 
         while True:
 
-            remaining = limit - time.monotonic()
-            ready, _, _ = select.select([stdout], [], [], max(remaining, 0))
-            if not ready:
-                self._restart(kill=True)
-                return ExecutionResult(timed_out=True, state_reset=True)
+            remaining = max((limit - time.monotonic()), 0)
 
-            brut_answer = stdout.readline()
+            try:
+                brut_answer = self.messages.get(block=True, timeout=remaining)
+            except Empty:
+                self._restart(kill=True)
+                return ExecutionResult(
+                    stdout=self._truncate(
+                        exec_stdout_part1, exec_stdout_part2, length
+                    ),
+                    truncated=length > MAX_OUTPUT_CHARS,
+                    timed_out=True,
+                    state_reset=True,
+                )
 
             # If the answer is "" it means that the worker process died for
             # unknown reason (maybe a sys.exit() from the code).
             if brut_answer == "":
                 exit_code = self._restart(kill=False)
                 return ExecutionResult(
+                    stdout=self._truncate(
+                        exec_stdout_part1, exec_stdout_part2, length
+                    ),
+                    truncated=length > MAX_OUTPUT_CHARS,
                     state_reset=True,
-                    error=f"Worker process exited with code {exit_code}",
+                    error=f"Worker process exited with code {exit_code}.",
                 )
 
             answer = json.loads(brut_answer)
@@ -133,14 +254,32 @@ class Sandbox(SandboxPort):
                 stdin.flush()
                 limit += time.monotonic() - start
                 continue
+            if "exec_stdout" in answer:
+                if length < HALF_OUTPUT_CHARS:
+                    exec_stdout_part1, exec_stdout_part2 = (
+                        self._format_part_one(
+                            answer["exec_stdout"], exec_stdout_part1
+                        )
+                    )
+                else:
+                    exec_stdout_part2 += answer["exec_stdout"]
+                    exec_stdout_part2 = self._format_part_two(
+                        exec_stdout_part2
+                    )
+                length += len(answer["exec_stdout"])
+                continue
 
             if answer["interrupt"] is not None:
                 if answer["interrupt"] == "KeyboardInterrupt":
                     raise KeyboardInterrupt
                 else:
                     raise SystemExit(answer["exit_code"])
+
             return ExecutionResult(
-                stdout=answer["stdout"],
+                stdout=self._truncate(
+                    exec_stdout_part1, exec_stdout_part2, length
+                ),
+                truncated=length > MAX_OUTPUT_CHARS,
                 error=answer["error"],
                 memory_exceeded=answer["memory_exceeded"],
                 final_answer=answer["answer"],
@@ -216,12 +355,17 @@ class Sandbox(SandboxPort):
         if self.proc is None:
             return
         if self.proc.stdin is not None:
-            self.proc.stdin.close()
+            try:
+                self.proc.stdin.close()
+            except BrokenPipeError:
+                pass  # self.proc.stdin already closed.
         try:
             self.proc.wait(timeout=2)
         except TimeoutExpired:
             self.proc.kill()
             self.proc.wait()
+        if self.monitor:
+            self.monitor.join(timeout=0.1)
         if self.proc.stdout is not None:
             self.proc.stdout.close()
         self.proc = None
