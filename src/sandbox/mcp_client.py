@@ -4,12 +4,19 @@ from asyncio import AbstractEventLoop
 from typing import Literal, Any
 from fastmcp import Client
 from fastmcp.client import StdioTransport
-from fastmcp.exceptions import ToolError
-from mcp.types import Tool
+from fastmcp.exceptions import ToolError, McpError
+from mcp.types import (
+    Tool,
+    Resource,
+    ResourceTemplate,
+    TextResourceContents,
+    BlobResourceContents,
+)
 from src.sandbox.errors import (
     TransportSTDIOError,
     ServerMCPError,
     ToolExecutionError,
+    ResourcesError
 )
 
 
@@ -88,6 +95,41 @@ class MCPClient:
             return self.loop.run_until_complete(client.list_tools())
         except Exception as e:
             raise ServerMCPError(f"Tool failed: {e}") from e
+
+    def get_resources(self) -> tuple[list[Resource], list[ResourceTemplate]]:
+        """Retrieve all resources available on the server."""
+        client = self._get_client
+        try:
+            resources = self.loop.run_until_complete(client.list_resources())
+            resources_temp = self.loop.run_until_complete(
+                client.list_resource_templates()
+            )
+            return (resources, resources_temp)
+        except McpError:
+            return ([], [])
+
+    def read_resource(self, uri: str) -> str:
+        """Read and return an exposed resource on the server.
+
+        Args:
+            uri (str): The uri of the wanted resource.
+        """
+        client: Client = self._get_client
+        try:
+            result = self.loop.run_until_complete(client.read_resource(uri))
+            final_result: list[str] = []
+            for elem in result:
+                if isinstance(elem, TextResourceContents):
+                    final_result.append(elem.text)
+                if isinstance(elem, BlobResourceContents):
+                    final_result.append(f"[binary content]: {elem.mime_type}")
+            return "\n".join(final_result)
+        except (McpError, ValueError) as e:
+            raise ResourcesError(f"Resources retrieval failed: {e}") from e
+        except Exception as e:
+            raise ServerMCPError(
+                f"MCP server failed during resource retrieval: {e}"
+            ) from e
 
     def call_tool(self, name: str, args: dict[str, Any]) -> str | Any:
         """Call a tool on the server.

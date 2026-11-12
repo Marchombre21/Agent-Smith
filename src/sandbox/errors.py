@@ -15,3 +15,7 @@ class ServerMCPError(SandboxError):
 
 class ToolExecutionError(Exception):
     """Raised when the tool execution failed in the mcp server."""
+
+
+class ResourcesError(Exception):
+    """Raised when the resources retrieval failed in the mcp server."""
