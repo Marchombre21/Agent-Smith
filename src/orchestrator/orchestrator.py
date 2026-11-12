@@ -127,11 +127,13 @@ class Orchestrator:
         """
         if not self._ready:
             self._setup()
+        # Read before the call: the call itself uses up the budget.
+        call_limit = self._budget.next_call_max_tokens
         try:
             response = self._llm.complete(
                 self._conversation.messages,
                 stop=self._STOP_SEQUENCES,
-                max_tokens=self._budget.next_call_max_tokens,
+                max_tokens=call_limit,
                 timeout=self._budget.remaining_seconds,
             )
         except LLMCallFailed as failure:
@@ -164,7 +166,15 @@ class Orchestrator:
                 )
         if result is not None and result.state_reset and self._setup_code:
             self._ready = False
-        observation = self._formatter.format(extracted, result)
+        # A reply that used every token it was allowed was cut off.
+        cut_at = (
+            response.output_tokens
+            if response.output_tokens >= call_limit
+            else None
+        )
+        observation = self._formatter.format(
+            extracted, result, cut_at=cut_at
+        )
         if extracted.code is not None and result is not None:
             # Steps without code are left out: the extraction already
             # explains them, and two of them in a row are not a repeat.
@@ -175,7 +185,7 @@ class Orchestrator:
             )
             if repeat_of is not None:
                 observation = self._formatter.format(
-                    extracted, result, repeat_of=repeat_of
+                    extracted, result, repeat_of=repeat_of, cut_at=cut_at
                 )
         self._conversation.add_observation(observation)
         self._recorder.record(response, extracted.code, observation)
