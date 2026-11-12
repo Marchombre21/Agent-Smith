@@ -21,9 +21,6 @@ class ExecutionResult(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    # Ces champs sont une première proposition : ils peuvent encore
-    # changer selon ce que la sandbox pourra réellement fournir.
-
     stdout: str = Field(
         default="", description="What the code printed, possibly truncated"
     )
@@ -39,10 +36,6 @@ class ExecutionResult(BaseModel):
     memory_exceeded: bool = Field(
         default=False, description="The code was stopped by the memory limit"
     )
-    truncated: bool = Field(
-        default=False,
-        description="stdout was cut because it was too long",
-    )
     state_reset: bool = Field(
         default=False,
         description="Variables from previous executions were lost, e.g. "
@@ -55,8 +48,6 @@ class ExecutionResult(BaseModel):
     )
 
 
-# Proposition : le nom
-# et la place de cette exception peuvent changer.
 class SandboxError(Exception):
     """The sandbox itself failed, so the code could not be run at all.
 
@@ -98,10 +89,6 @@ class SandboxPort(ABC):
             SandboxError: The sandbox itself is out of order.
         """
 
-    # Point encore ouvert : le sujet impose un manuel généré depuis les
-    # schémas des outils MCP, pas cette méthode. Son nom, et le choix
-    # entre une sandbox qui écrit le texte ou qui expose seulement les
-    # schémas, dépendent de la construction de la sandbox.
     @abstractmethod
     def manual(self) -> str:
         """Describe the tools available to the code, for the LLM.

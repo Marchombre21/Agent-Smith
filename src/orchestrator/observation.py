@@ -21,7 +21,6 @@ class ObservationFormatter:
     # The loop stops right after this step: the model never reads it, but
     # solution.json does, and must say what really happened.
     _FINAL_ANSWER = "final_answer() was called: the task ends here."
-    _TRUNCATED = "[Output truncated: too long.]"
     _TIMED_OUT = (
         "Execution stopped: time limit reached. The output above is partial."
     )
@@ -34,6 +33,7 @@ class ObservationFormatter:
         "Same code and same result as step {step}. Sending it again will "
         "not help: try something different."
     )
+
     _CUT_MARKER = "\n[... {cut} characters cut ...]\n"
     # Characters kept free for the marker, so the result fits max_chars.
     _MARKER_ROOM = 40
@@ -92,8 +92,6 @@ class ObservationFormatter:
         else:
             empty = self._SILENT_RUN if clean else self._NO_OUTPUT
             parts.append(output or empty)
-        if result.truncated:
-            parts.append(self._TRUNCATED)
         if result.timed_out:
             parts.append(self._TIMED_OUT)
         if result.memory_exceeded:
