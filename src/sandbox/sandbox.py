@@ -5,6 +5,7 @@ import time
 from src.sandbox_port import ExecutionResult, SandboxError, SandboxPort
 from typing import Any, IO, Literal, Callable
 from threading import Thread
+from json import JSONDecodeError
 from queue import Queue, Empty
 from src.models import SandboxConfig
 from pathlib import Path
@@ -244,7 +245,6 @@ class Sandbox(SandboxPort):
                     stdout=self._truncate(
                         exec_stdout_part1, exec_stdout_part2, length
                     ),
-                    truncated=length > MAX_OUTPUT_CHARS,
                     timed_out=True,
                     state_reset=True,
                 )
@@ -257,12 +257,31 @@ class Sandbox(SandboxPort):
                     stdout=self._truncate(
                         exec_stdout_part1, exec_stdout_part2, length
                     ),
-                    truncated=length > MAX_OUTPUT_CHARS,
                     state_reset=True,
                     error=f"Worker process exited with code {exit_code}.",
                 )
 
-            answer = json.loads(brut_answer)
+            try:
+                answer = json.loads(brut_answer)
+            # TODO: étendre ce except à toute ligne qui n'est pas un message valide du
+            # protocole. Le code peut écrire sur le fd 1 du worker (os.write, évasions
+            # connues), et 3 cas arrivent ici :
+            #   - pas du JSON ("hello")         -> JSONDecodeError (géré ci-dessous)
+            #   - JSON mais pas un dict ("42")  -> TypeError sur `"tool_call" in answer`
+            #   - dict sans les clés attendues  -> KeyError sur answer["interrupt"]
+            # Tous doivent finir dans UNE branche : restart(kill=True) + ExecutionResult,
+            # sinon les réponses suivantes sont décalées d'une exécution.
+            except JSONDecodeError:
+                self._restart(kill=True)
+                return ExecutionResult(
+                    stdout=self._truncate(
+                        exec_stdout_part1, exec_stdout_part2, length
+                    ),
+                    state_reset=True,
+                    error="Your code wrote directly to the process's output"
+                    " without using 'print'; the sandbox was restarted, and"
+                    " the variables were lost.",
+                )
             if "tool_call" in answer:
                 limit = self._server_call(
                     limit=limit,
@@ -304,7 +323,6 @@ class Sandbox(SandboxPort):
                 stdout=self._truncate(
                     exec_stdout_part1, exec_stdout_part2, length
                 ),
-                truncated=length > MAX_OUTPUT_CHARS,
                 error=answer["error"],
                 memory_exceeded=answer["memory_exceeded"],
                 final_answer=answer["answer"],
