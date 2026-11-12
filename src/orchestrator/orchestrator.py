@@ -131,7 +131,7 @@ class Orchestrator:
             response = self._llm.complete(
                 self._conversation.messages,
                 stop=self._STOP_SEQUENCES,
-                max_tokens=self._budget.remaining_output_tokens,
+                max_tokens=self._budget.next_call_max_tokens,
                 timeout=self._budget.remaining_seconds,
             )
         except LLMCallFailed as failure:

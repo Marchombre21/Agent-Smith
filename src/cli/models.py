@@ -43,6 +43,12 @@ class AgentSettings(BaseModel):
         description="Longest observation sent to the LLM; a longer one "
         "keeps its start and its end (ObservationFormatter)",
     )
+    max_output_tokens_per_call: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Output tokens allowed to one LLM call; None leaves "
+        "only the limit of the whole task",
+    )
     detect_repeats: bool = Field(
         default=True,
         description="Tell the LLM when a step repeats an earlier one "

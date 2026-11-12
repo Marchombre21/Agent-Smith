@@ -60,8 +60,21 @@ class TaskBudget:
 
     @property
     def remaining_output_tokens(self) -> int:
-        """Output tokens still allowed: the ``max_tokens`` of next call."""
+        """Output tokens still allowed for the whole task."""
         return max(0, self._limits.max_output_tokens - self._output_tokens)
+
+    @property
+    def next_call_max_tokens(self) -> int:
+        """The ``max_tokens`` of the next LLM call.
+
+        What is left of the task, cut down to the cap of one call if the
+        limits set one: a reply that runs away then costs a step, not the
+        whole output budget.
+        """
+        cap = self._limits.max_output_tokens_per_call
+        if cap is None:
+            return self.remaining_output_tokens
+        return min(self.remaining_output_tokens, cap)
 
     @property
     def remaining_seconds(self) -> float:

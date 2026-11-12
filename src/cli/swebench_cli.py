@@ -37,4 +37,7 @@ class SweBenchCli(BenchmarkCli):
         return TaskLimits.swebench(
             max_iterations=self._settings.max_iterations,
             time_margin_seconds=self._settings.time_margin_seconds,
+            max_output_tokens_per_call=(
+                self._settings.max_output_tokens_per_call
+            ),
         )
