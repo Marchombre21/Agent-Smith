@@ -23,12 +23,8 @@ repository cannot be imported in the sandbox: run its code with \
 run_command and print the result, for instance \
 print(run_command("python -c '...'", "/testbed")).
 4. Fix the source code with edit_file. old_str must match one place \
-only, so start it at the `def` line of the method you change and \
-include everything down to the line you edit: a line such as \
-"other = _check_vector(other)" alone appears in many methods. If \
-edit_file says "More than one occurrence", do not read the file \
-again: extend old_str upward to the `def` line. Change as little as \
-needed and do not edit the tests. Never install or upgrade packages.
+only: include the lines around it. Change as little as needed and do \
+not edit the tests. Never install or upgrade packages.
 5. Run the tests and print only the end of the report, where the \
 summary is: r = run_tests(); print(r["stdout"][-1500:]). Read which \
 tests fail. Fix, then run them again.
