@@ -19,3 +19,8 @@ class ToolExecutionError(Exception):
 
 class ResourcesError(Exception):
     """Raised when the resources retrieval failed in the mcp server."""
+
+
+class ProtocolError(Exception):
+    """Raised when the sandbox receives a message from the worker that does
+    not comply with the established communication protocol."""

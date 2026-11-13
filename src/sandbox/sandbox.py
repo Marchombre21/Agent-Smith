@@ -13,7 +13,11 @@ from resource import RLIMIT_AS, setrlimit
 from subprocess import PIPE, Popen, TimeoutExpired
 from src.sandbox.mcp_client import MCPClient
 from mcp.types import Tool, ResourceTemplate, Resource
-from src.sandbox.errors import ToolExecutionError, ResourcesError
+from src.sandbox.errors import (
+    ToolExecutionError,
+    ResourcesError,
+    ProtocolError,
+)
 from src.sandbox.manual import ManualMaker
 
 # Maximum number of characters of stdout returned for one execution.
@@ -189,6 +193,59 @@ class Sandbox(SandboxPort):
             return msg[-HALF_OUTPUT_CHARS:]
         return msg
 
+    @staticmethod
+    def _check_protocol(msg: str) -> dict[str, Any]:
+        """Check if the returned message complies with the established
+        communication protocol.
+
+        Args:
+            msg (str): The returned message
+
+        Raises:
+            ProtocolError: If msg is not JSON, not a dict, or does not match
+            any message schema.
+
+        Returns:
+            dict[str, Any]: The returned message loaded as a dict.
+        """
+        error_msg: str = (
+            "The received execution output is malformed. Protocol not"
+            " followed. Cannot accept it"
+        )
+        try:
+            message = json.loads(msg)
+        except JSONDecodeError:
+            raise ProtocolError(f"{error_msg}.")
+        if not isinstance(message, dict):
+            raise ProtocolError(f"{error_msg}.")
+        authorized_keys: dict[str, dict[str, Any]] = {
+            "exec_stdout": {"exec_stdout": str},
+            "tool_call": {"tool_call": str, "args": list, "kwargs": dict},
+            "resource_call": {"resource_call": str},
+        }
+
+        final_keys: dict[str, Any] = {
+            "error": (str, type(None)),
+            "memory_exceeded": bool,
+            "answer": (str, type(None)),
+            "interrupt": (str, type(None)),
+            "exit_code": (int, type(None)),
+        }
+        for key in authorized_keys:
+            if key in message:
+                schema = authorized_keys[key]
+                break
+        else:
+            schema = final_keys
+
+        for sch_key in schema:
+            if sch_key not in message or not isinstance(
+                message[sch_key], schema[sch_key]
+            ):
+                raise ProtocolError(f"{error_msg}.")
+
+        return message
+
     def execute(
         self, code: str, timeout: float | None = None
     ) -> ExecutionResult:
@@ -262,21 +319,8 @@ class Sandbox(SandboxPort):
                 )
 
             try:
-                answer = json.loads(brut_answer)
-            # TODO: étendre ce except à toute ligne qui n'est
-            # pas un message valide du protocole. Le code peut
-            # écrire sur le fd 1 du worker (os.write, évasions
-            # connues), et 3 cas arrivent ici :
-            #   - pas du JSON ("hello")         ->
-            #     JSONDecodeError (géré ci-dessous)
-            #   - JSON mais pas un dict ("42")  -> TypeError
-            #     sur `"tool_call" in answer`
-            #   - dict sans les clés attendues  -> KeyError
-            #     sur answer["interrupt"]
-            # Tous doivent finir dans UNE branche :
-            # restart(kill=True) + ExecutionResult, sinon les
-            # réponses suivantes sont décalées d'une exécution.
-            except JSONDecodeError:
+                answer = self._check_protocol(brut_answer)
+            except ProtocolError:
                 self._restart(kill=True)
                 return ExecutionResult(
                     stdout=self._truncate(
