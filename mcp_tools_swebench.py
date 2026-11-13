@@ -40,9 +40,9 @@ def _format_output(output: str) -> str:
     return final_return
 
 
-def _run(cmd: list[str],
-         input: str = "",
-         workdir: str = TESTBED_PATH) -> CompletedProcess[str]:
+def _run(
+    cmd: list[str], input: str = "", workdir: str = TESTBED_PATH
+) -> CompletedProcess[str]:
     if CONTAINER_ID:
         final_cmd = [
             "docker",
@@ -98,8 +98,9 @@ def _truncate_by_end(sentence: str, nb_lines: int) -> str:
 
 def _return_error(code: int, err: str | None) -> None:
     if code != 0:
-        raise ToolError("The tool execution failed with code"
-                        f" {code}:\n{err}")
+        raise ToolError(
+            "The tool execution failed with code" f" {code}:\n{err}"
+        )
 
 
 def _read_file(filepath: str, start_line: int, end_line: int) -> str:
@@ -244,8 +245,10 @@ def search_code(pattern: str, file_pattern: str) -> str:
 
     run_return: CompletedProcess[str] = _run(cmd=cmd)
     if run_return.returncode == 1:
-        return (f"No code matching '{pattern}' in files matching"
-                f" '{file_pattern}'.")
+        return (
+            f"No code matching '{pattern}' in files matching"
+            f" '{file_pattern}'."
+        )
     _return_error(run_return.returncode, run_return.stderr)
 
     msg: str = "matching lines shown, use a more specific pattern"
@@ -286,19 +289,52 @@ def edit_file(filepath: str, old_str: str, new_str: str) -> str:
 
     run_return: CompletedProcess[str] = _run(cmd=cmd)
     _return_error(run_return.returncode, run_return.stderr)
-    match run_return.stdout.count(old_str):
+    old_content = run_return.stdout
+    match old_content.count(old_str):
         case 0:
             raise ToolError("Old_str not found")
         case n if n > 1:
-            raise ToolError("More than one occurrence. Be more specific.")
-    old_content = run_return.stdout
-    new_content = run_return.stdout.replace(old_str, new_str)
+            length_str = len(old_str)
+            index = old_content.find(old_str)
+            formatted_return = ""
+            lines_dict: dict[tuple[int, int], int] = {}
+            while index != -1:
+                nb_lines_start: int = old_content.count("\n", 0, index) + 1
+                nb_lines_end: int = (
+                    old_content.count("\n", 0, index + length_str - 1) + 1
+                )
+                key = (nb_lines_start, nb_lines_end)
+                lines_dict[key] = lines_dict.get(key, 0) + 1
+                index = old_content.find(old_str, index + length_str)
+            split_content = old_content.splitlines(keepends=True)
+            for lines, value in lines_dict.items():
+                line_content = split_content[lines[0] - 1]
+                nb_occurrences: str = (
+                    f" ({value} occurrences)" if value > 1 else ""
+                )
+                formatted_lines: str = (
+                    f"s {lines[0]}-{lines[1]}"
+                    if lines[0] != lines[1]
+                    else f" {lines[0]}"
+                )
+                formatted_return += (
+                    f"Line{formatted_lines}{nb_occurrences}:"
+                    f" {line_content}"
+                )
+            msg: str = "occurrences found shown"
+            raise ToolError(
+                "More than one occurrence. Be more"
+                f" specific:\n{_truncate(formatted_return, 50, msg)}"
+            )
+    new_content = old_content.replace(old_str, new_str)
     cmd = ["tee", complete_filepath]
     run_return = _run(cmd=cmd, input=new_content)
     _return_error(run_return.returncode, run_return.stderr)
     if complete_filepath.endswith(".py"):
-        code = ("import sys; compile(open(sys.argv[1]).read(),"
-                " sys.argv[1], 'exec')")
+        code = (
+            "import sys; compile(open(sys.argv[1]).read(),"
+            " sys.argv[1], 'exec')"
+        )
         cmd = [
             "python",
             "-c",
@@ -307,12 +343,17 @@ def edit_file(filepath: str, old_str: str, new_str: str) -> str:
         ]
         run_return = _run(cmd=cmd)
         if run_return.returncode != 0:
-            err = ("".join(run_return.stderr.splitlines(keepends=True)[2:])
-                   or run_return.stderr)
+            err = (
+                "".join(run_return.stderr.splitlines(keepends=True)[2:])
+                or run_return.stderr
+            )
             cmd = ["tee", complete_filepath]
             rollback = _run(cmd=cmd, input=old_content)
-            state = ("file unchanged" if rollback.returncode == 0 else
-                     "rollback FAILED, file contains the broken edit")
+            state = (
+                "file unchanged"
+                if rollback.returncode == 0
+                else "rollback FAILED, file contains the broken edit"
+            )
             raise ToolError(f"Edit rejected ({state}): {err}")
     return "Old_str replaced by new_str with success."
 
@@ -352,7 +393,8 @@ def search_function_or_class_definition_in_code(name: str) -> str:
         excluded.append(f"--exclude-dir={name_dir}")
 
     regex = (
-        rf"^[[:space:]]*(async[[:space:]]+)?(def|class)[[:space:]]+{name}\b")
+        rf"^[[:space:]]*(async[[:space:]]+)?(def|class)[[:space:]]+{name}\b"
+    )
     cmd = ["grep", "-rnE", regex, *excluded, "--include=*.py", TESTBED_PATH]
 
     run_return = _run(cmd=cmd)
@@ -400,9 +442,9 @@ def find_references(name: str, filepath: str, line: int) -> str:
     if not name.isidentifier():
         raise ToolError("'name' must be a valid python identifier.")
 
-    line_found: str = _read_file(filepath=filepath,
-                                 start_line=line,
-                                 end_line=line)
+    line_found: str = _read_file(
+        filepath=filepath, start_line=line, end_line=line
+    )
 
     if not re.search(rf"\b{name}\b", line_found):
         raise ToolError(f"{name} not found at line {line} in {filepath}")
@@ -470,25 +512,33 @@ def run_command(command: str, workdir: str = ".") -> dict[str, str | int]:
     """
 
     if not command.strip():
-        raise ToolError("The argument 'command' can't be empty and must be"
-                        " a valid command.")
+        raise ToolError(
+            "The argument 'command' can't be empty and must be"
+            " a valid command."
+        )
     complete_path: str = _resolve_path(workdir)
 
     cmd = [
-        "timeout", "-s", "KILL",
-        str(COMMAND_TIMEOUT), "bash", "-c", command
+        "timeout",
+        "-s",
+        "KILL",
+        str(COMMAND_TIMEOUT),
+        "bash",
+        "-c",
+        command,
     ]
 
     run_return = _run(cmd=cmd, workdir=complete_path)
 
     if run_return.returncode == 137:
-        run_return.stderr += f"\n[Command killed after {COMMAND_TIMEOUT}s"\
-                              " timeout]"
+        run_return.stderr += (
+            f"\n[Command killed after {COMMAND_TIMEOUT}s" " timeout]"
+        )
 
     return {
         "stdout": _truncate_by_end(run_return.stdout, 50),
         "stderr": _truncate_by_end(run_return.stderr, 50),
-        "exit_code": run_return.returncode
+        "exit_code": run_return.returncode,
     }
 
 
@@ -529,24 +579,29 @@ def run_tests() -> dict[str, str | int]:
 
     tests_results = _run(cmd=cmd, input=script)
     if tests_results.returncode == 137:
-        tests_results.stderr += f"\n[Tests killed after {TESTS_TIMEOUT}s"\
-                             " timeout.]"
+        tests_results.stderr += (
+            f"\n[Tests killed after {TESTS_TIMEOUT}s" " timeout.]"
+        )
         cmd = ["git", "checkout", "HEAD", "--", "."]
         restore_result = _run(cmd=cmd)
         if restore_result.returncode != 0:
-            tests_results.stderr += "\n[Warning: could not restore the"\
+            tests_results.stderr += (
+                "\n[Warning: could not restore the"
                 f" repository after timeout: {restore_result.stderr}]"
+            )
         if saved and restore_result.returncode == 0:
             restore_result = _run(["git", "apply"], input=saved)
             if restore_result.returncode != 0:
-                tests_results.stderr += "\n[Warning: could not restore the"\
-                    " repository after timeout, your changes are lost, apply"\
+                tests_results.stderr += (
+                    "\n[Warning: could not restore the"
+                    " repository after timeout, your changes are lost, apply"
                     f" them again : {restore_result.stderr}]"
+                )
 
     return {
         "stdout": _truncate_by_end(tests_results.stdout, 100),
         "stderr": _truncate_by_end(tests_results.stderr, 100),
-        "exit_code": tests_results.returncode
+        "exit_code": tests_results.returncode,
     }
 
 
