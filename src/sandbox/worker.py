@@ -285,6 +285,8 @@ def main() -> None:
     builtins_dict_copy["exit"] = my_exit
     builtins_dict_copy["quit"] = my_exit
     builtins_dict_copy["read_resource"] = _make_read_resources(real_stdout)
+    builtins_dict_copy.pop("__loader__")
+    builtins_dict_copy.pop("__spec__")
     for name in RESTRICTED:
         builtins_dict_copy[name] = _restrict_builtins(name)
 
