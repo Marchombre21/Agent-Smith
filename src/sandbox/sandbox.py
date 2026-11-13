@@ -3,9 +3,10 @@ import sys
 import time
 
 from src.sandbox_port import ExecutionResult, SandboxError, SandboxPort
-from typing import Any, IO, Literal, Callable
+from src.sandbox.output_buffer import OutputBuffer
+from typing import Any, IO, Literal
 from threading import Thread
-from json import JSONDecodeError
+from src.sandbox.protocol import server_call, check_protocol
 from queue import Queue, Empty
 from src.models import SandboxConfig
 from pathlib import Path
@@ -19,13 +20,6 @@ from src.sandbox.errors import (
     ProtocolError,
 )
 from src.sandbox.manual import ManualMaker
-
-# Maximum number of characters of stdout returned for one execution.
-# Only the beginning and the end are kept (half each): the middle is
-# counted but never stored, so the parent's memory stays bounded even
-# if the code prints without stopping.
-MAX_OUTPUT_CHARS = 7000
-HALF_OUTPUT_CHARS = MAX_OUTPUT_CHARS // 2
 
 
 class Sandbox(SandboxPort):
@@ -97,47 +91,6 @@ class Sandbox(SandboxPort):
         )
         self.monitor.start()
 
-    @staticmethod
-    def _server_call(
-        limit: float,
-        function: Callable[..., dict[str, Any]],
-        stdin: IO[str],
-        answer: dict[str, Any],
-    ) -> float:
-        start = time.monotonic()
-        response = function(request=answer)
-        stdin.write(json.dumps(response) + "\n")
-        stdin.flush()
-        limit += time.monotonic() - start
-        return limit
-
-    @staticmethod
-    def _truncate(part1: str, part2: str, length: int) -> str:
-        """Join the kept beginning and end of the stdout.
-
-        If more characters were printed than MAX_OUTPUT_CHARS, a marker
-        giving the number of characters removed is put between the two
-        parts.
-
-        Args:
-            part1: First characters of the stdout (at most
-                HALF_OUTPUT_CHARS).
-            part2: Last characters of the stdout (at most
-                HALF_OUTPUT_CHARS).
-            length: Total number of characters printed by the code.
-
-        Returns:
-            The stdout to give to the agent, possibly truncated.
-        """
-        nb_truncate = length - MAX_OUTPUT_CHARS
-        if nb_truncate > 0:
-            msg: str = (
-                f"[Truncated]: {nb_truncate} characters on a"
-                f" total of {length}."
-            )
-            return f"{part1}...\n{msg}\n...{part2}"
-        return part1 + part2
-
     def _reader(self, stdout: IO[str], queue: Queue[str]) -> None:
         """A thread monitor routine responsible for reading the worker's output
         and triggering the sentinel when worker is closed (timeout, kill or
@@ -153,98 +106,6 @@ class Sandbox(SandboxPort):
             queue.put(brut_answer)
             if brut_answer == "":
                 break
-
-    def _format_part_one(self, msg: str, part1: str) -> tuple[str, str]:
-        """Add a new piece of stdout while the beginning is not full.
-
-        The piece fills the beginning; what does not fit goes to the
-        end, which keeps only its last characters.
-
-        Args:
-            msg: Text just printed by the code.
-            part1: Beginning of the stdout received so far.
-
-        Returns:
-            The new beginning and the new end of the stdout.
-        """
-        remain_space: int = HALF_OUTPUT_CHARS - len(part1)
-
-        if remain_space > len(msg):
-            return (part1 + msg, "")
-        else:
-            part1 += msg[:remain_space]
-            part2 = self._format_part_two(msg[remain_space:])
-            return (part1, part2)
-
-    @staticmethod
-    def _format_part_two(msg: str) -> str:
-        """Keep only the last HALF_OUTPUT_CHARS characters of text.
-
-        Called after each addition to the end of the stdout, so that it
-        never grows beyond the limit (sliding window).
-
-        Args:
-            msg: End of the stdout with the text just printed added.
-
-        Returns:
-            The last characters of msg, or msg itself if short enough.
-        """
-        if len(msg) > HALF_OUTPUT_CHARS:
-            return msg[-HALF_OUTPUT_CHARS:]
-        return msg
-
-    @staticmethod
-    def _check_protocol(msg: str) -> dict[str, Any]:
-        """Check if the returned message complies with the established
-        communication protocol.
-
-        Args:
-            msg (str): The returned message
-
-        Raises:
-            ProtocolError: If msg is not JSON, not a dict, or does not match
-            any message schema.
-
-        Returns:
-            dict[str, Any]: The returned message loaded as a dict.
-        """
-        error_msg: str = (
-            "The received execution output is malformed. Protocol not"
-            " followed. Cannot accept it"
-        )
-        try:
-            message = json.loads(msg)
-        except JSONDecodeError:
-            raise ProtocolError(f"{error_msg}.")
-        if not isinstance(message, dict):
-            raise ProtocolError(f"{error_msg}.")
-        authorized_keys: dict[str, dict[str, Any]] = {
-            "exec_stdout": {"exec_stdout": str},
-            "tool_call": {"tool_call": str, "args": list, "kwargs": dict},
-            "resource_call": {"resource_call": str},
-        }
-
-        final_keys: dict[str, Any] = {
-            "error": (str, type(None)),
-            "memory_exceeded": bool,
-            "answer": (str, type(None)),
-            "interrupt": (str, type(None)),
-            "exit_code": (int, type(None)),
-        }
-        for key in authorized_keys:
-            if key in message:
-                schema = authorized_keys[key]
-                break
-        else:
-            schema = final_keys
-
-        for sch_key in schema:
-            if sch_key not in message or not isinstance(
-                message[sch_key], schema[sch_key]
-            ):
-                raise ProtocolError(f"{error_msg}.")
-
-        return message
 
     def execute(
         self, code: str, timeout: float | None = None
@@ -271,10 +132,7 @@ class Sandbox(SandboxPort):
             SandboxError: If the sandbox is not started.
         """
 
-        exec_stdout_part1: str = ""
-        exec_stdout_part2: str = ""
-        length = 0
-
+        output: OutputBuffer = OutputBuffer()
         limit = (
             self.max_time if timeout is None else min(timeout, self.max_time)
         ) + time.monotonic()
@@ -285,7 +143,7 @@ class Sandbox(SandboxPort):
         except BrokenPipeError:
             exit_code = self._restart(kill=False)
             return ExecutionResult(
-                stdout=exec_stdout_part1,
+                stdout=output.render(),
                 state_reset=True,
                 error=f"Worker process exited with code {exit_code}.",
             )
@@ -299,9 +157,7 @@ class Sandbox(SandboxPort):
             except Empty:
                 self._restart(kill=True)
                 return ExecutionResult(
-                    stdout=self._truncate(
-                        exec_stdout_part1, exec_stdout_part2, length
-                    ),
+                    stdout=output.render(),
                     timed_out=True,
                     state_reset=True,
                 )
@@ -311,28 +167,24 @@ class Sandbox(SandboxPort):
             if brut_answer == "":
                 exit_code = self._restart(kill=False)
                 return ExecutionResult(
-                    stdout=self._truncate(
-                        exec_stdout_part1, exec_stdout_part2, length
-                    ),
+                    stdout=output.render(),
                     state_reset=True,
                     error=f"Worker process exited with code {exit_code}.",
                 )
 
             try:
-                answer = self._check_protocol(brut_answer)
+                answer = check_protocol(brut_answer)
             except ProtocolError:
                 self._restart(kill=True)
                 return ExecutionResult(
-                    stdout=self._truncate(
-                        exec_stdout_part1, exec_stdout_part2, length
-                    ),
+                    stdout=output.render(),
                     state_reset=True,
                     error="Your code wrote directly to the process's output"
                     " without using 'print'; the sandbox was restarted, and"
                     " the variables were lost.",
                 )
             if "tool_call" in answer:
-                limit = self._server_call(
+                limit = server_call(
                     limit=limit,
                     function=self._handle_call_tool,
                     stdin=stdin,
@@ -340,7 +192,7 @@ class Sandbox(SandboxPort):
                 )
                 continue
             if "resource_call" in answer:
-                limit = self._server_call(
+                limit = server_call(
                     limit=limit,
                     function=self._handle_resources_call,
                     stdin=stdin,
@@ -348,18 +200,7 @@ class Sandbox(SandboxPort):
                 )
                 continue
             if "exec_stdout" in answer:
-                if length < HALF_OUTPUT_CHARS:
-                    exec_stdout_part1, exec_stdout_part2 = (
-                        self._format_part_one(
-                            answer["exec_stdout"], exec_stdout_part1
-                        )
-                    )
-                else:
-                    exec_stdout_part2 += answer["exec_stdout"]
-                    exec_stdout_part2 = self._format_part_two(
-                        exec_stdout_part2
-                    )
-                length += len(answer["exec_stdout"])
+                output.add(answer["exec_stdout"])
                 continue
 
             if answer["interrupt"] is not None:
@@ -369,9 +210,7 @@ class Sandbox(SandboxPort):
                     raise SystemExit(answer["exit_code"])
 
             return ExecutionResult(
-                stdout=self._truncate(
-                    exec_stdout_part1, exec_stdout_part2, length
-                ),
+                stdout=output.render(),
                 error=answer["error"],
                 memory_exceeded=answer["memory_exceeded"],
                 final_answer=answer["answer"],
