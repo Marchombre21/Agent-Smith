@@ -263,14 +263,19 @@ class Sandbox(SandboxPort):
 
             try:
                 answer = json.loads(brut_answer)
-            # TODO: étendre ce except à toute ligne qui n'est pas un message valide du
-            # protocole. Le code peut écrire sur le fd 1 du worker (os.write, évasions
+            # TODO: étendre ce except à toute ligne qui n'est
+            # pas un message valide du protocole. Le code peut
+            # écrire sur le fd 1 du worker (os.write, évasions
             # connues), et 3 cas arrivent ici :
-            #   - pas du JSON ("hello")         -> JSONDecodeError (géré ci-dessous)
-            #   - JSON mais pas un dict ("42")  -> TypeError sur `"tool_call" in answer`
-            #   - dict sans les clés attendues  -> KeyError sur answer["interrupt"]
-            # Tous doivent finir dans UNE branche : restart(kill=True) + ExecutionResult,
-            # sinon les réponses suivantes sont décalées d'une exécution.
+            #   - pas du JSON ("hello")         ->
+            #     JSONDecodeError (géré ci-dessous)
+            #   - JSON mais pas un dict ("42")  -> TypeError
+            #     sur `"tool_call" in answer`
+            #   - dict sans les clés attendues  -> KeyError
+            #     sur answer["interrupt"]
+            # Tous doivent finir dans UNE branche :
+            # restart(kill=True) + ExecutionResult, sinon les
+            # réponses suivantes sont décalées d'une exécution.
             except JSONDecodeError:
                 self._restart(kill=True)
                 return ExecutionResult(
