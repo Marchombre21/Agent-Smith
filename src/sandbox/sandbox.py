@@ -46,7 +46,7 @@ class Sandbox(SandboxPort):
         self.memory = config.max_memory_mb
         self.proc: Popen[str] | None = None
         self.client: MCPClient | None = None
-        self.list_tools: list[Tool] = []
+        self. list_tools: list[Tool] = []
         self.list_resources: list[Resource] = []
         self.list_resources_temp: list[ResourceTemplate] = []
         self.list_prompts: list[Prompt] = []
@@ -258,7 +258,7 @@ class Sandbox(SandboxPort):
         name = request["tool_call"]
         for tool in self.list_tools:
             if tool.name == name:
-                params: list[str] = list(tool.input_schema["properties"])
+                params: list[str] = list(tool.inputSchema["properties"])
 
                 if len(params) < len(request["args"]):
                     return {

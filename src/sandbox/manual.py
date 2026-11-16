@@ -122,8 +122,8 @@ class ManualMaker:
     def _make_signature(self, tool: Tool) -> str:
         result: str = "def "
         result += tool.name + "("
-        args = tool.input_schema["properties"]
-        required_args = tool.input_schema.get("required", [])
+        args = tool.inputSchema["properties"]
+        required_args = tool.inputSchema.get("required", [])
         typed_args: list[str] = []
         for arg_name, arg_type in args.items():
             default_arg = ""
@@ -138,12 +138,12 @@ class ManualMaker:
             typed_args.append(f"{arg_name}: {arg_py_type}{default_arg}")
 
         result += ", ".join(typed_args) + ") -> "
-        if tool.output_schema is not None:
-            wrapped = tool.output_schema.get("x-fastmcp-wrap-result")
+        if tool.outputSchema is not None:
+            wrapped = tool.outputSchema.get("x-fastmcp-wrap-result")
             if wrapped:
-                args_out = tool.output_schema["properties"]["result"]
+                args_out = tool.outputSchema["properties"]["result"]
             else:
-                args_out = tool.output_schema
+                args_out = tool.outputSchema
             result += self._python_type(args_out)
         else:
             result += "Any"
@@ -162,8 +162,8 @@ class ManualMaker:
                 manual += (
                     textwrap.indent(tool.description, "    ").lstrip() + "\n"
                 )
-            if tool.input_schema is not None:
-                args = tool.input_schema.get("properties")
+            if tool.inputSchema is not None:
+                args = tool.inputSchema.get("properties")
                 if args:
                     manual += "\n    Args:\n"
                     for name, arg in args.items():
@@ -180,7 +180,7 @@ class ManualMaker:
                 manual += (
                     f"- {resource.uri}"
                     f"    {resource.description}"
-                    f"{self._mime_suffix(resource.mime_type)}\n"
+                    f"{self._mime_suffix(resource.mimeType)}\n"
                 )
         if len(self.resources_temp) > 0:
             manual += (
@@ -189,9 +189,9 @@ class ManualMaker:
             )
             for resource_temp in self.resources_temp:
                 manual += (
-                    f"- {resource_temp.uri_template}"
+                    f"- {resource_temp.uriTemplate}"
                     f"    {resource_temp.description}"
-                    f"{self._mime_suffix(resource_temp.mime_type)}\n"
+                    f"{self._mime_suffix(resource_temp.mimeType)}\n"
                 )
         if len(self.prompts) > 0:
             manual += RETRIEVE_PROMPT
