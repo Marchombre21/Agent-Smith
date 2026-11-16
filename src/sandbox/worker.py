@@ -65,6 +65,10 @@ class ResourceError(Exception):
     """Raised when an error occured in MCP server during resource retrieval."""
 
 
+class PromptError(Exception):
+    """Raised when the prompt retrieval failed in the mcp server."""
+
+
 class FinalAnswerSignal(BaseException):
     """Raised by final_answer() to stop the execution"""
 
@@ -104,8 +108,26 @@ def _make_tool(name: str, stdout: TextIO | Any) -> Callable[..., Any]:
     return tool
 
 
+def _make_retrieve_prompt(
+    stdout: TextIO | Any,
+) -> Callable[[str, dict[str, str] | None], str]:
+    def retrieve_prompt(name: str, args: dict[str, str] | None = None) -> str:
+        if name == "" or not isinstance(name, str):
+            raise PromptError("name can't be empty and must be a string.")
+        if not isinstance(args, (dict, type(None))):
+            raise PromptError("Arguments must be a dict.")
+        stdout.write(json.dumps({"prompt_call": name, "args": args}) + "\n")
+        stdout.flush()
+        answer = json.loads(sys.stdin.readline())
+        if answer["error"] is not None:
+            raise PromptError(answer["error"])
+        return str(answer["result"])
+
+    return retrieve_prompt
+
+
 def _make_read_resources(stdout: TextIO | Any) -> Callable[[str], str]:
-    def read_resource(uri: str) -> Any:
+    def read_resource(uri: str) -> str:
         if uri == "" or not isinstance(uri, str):
             raise ResourceError("uri can't be empty and must be a string.")
         stdout.write(json.dumps({"resource_call": uri}) + "\n")
@@ -113,7 +135,7 @@ def _make_read_resources(stdout: TextIO | Any) -> Callable[[str], str]:
         answer = json.loads(sys.stdin.readline())
         if answer["error"] is not None:
             raise ResourceError(answer["error"])
-        return answer["result"]
+        return str(answer["result"])
 
     return read_resource
 
@@ -285,6 +307,9 @@ def main() -> None:
     builtins_dict_copy["exit"] = my_exit
     builtins_dict_copy["quit"] = my_exit
     builtins_dict_copy["read_resource"] = _make_read_resources(real_stdout)
+    builtins_dict_copy["retrieve_prompt"] = _make_retrieve_prompt(real_stdout)
+    builtins_dict_copy.pop("__loader__")
+    builtins_dict_copy.pop("__spec__")
     for name in RESTRICTED:
         builtins_dict_copy[name] = _restrict_builtins(name)
 

@@ -1,6 +1,6 @@
 import textwrap
 from typing import Any
-from mcp.types import Tool, ResourceTemplate, Resource
+from mcp.types import Tool, ResourceTemplate, Resource, Prompt
 from src.models import SandboxConfig
 
 FINAL_ANSWER = (
@@ -24,6 +24,25 @@ READ_RESOURCES = (
     '    """\n\n'
 )
 
+RETRIEVE_PROMPT = (
+    "def retrieve_prompt(name: str, args: dict[str, str] | None = None)"
+    ' -> str:\n    """Retrieve and return a prompt exposed by the server. You'
+    " must specify the name of the wanted prompt and, possibly, the arguments"
+    " if needed.\n"
+    "    Args:\n"
+    "        name: The name corresponding to the wanted prompt.\n"
+    "        args: The args needed to retrieve the wanted prompt.\n"
+    "    Returns:\n"
+    "        str: A formatted string with the role and the content.\n"
+    "        Example:\n"
+    "            Message 1:\n"
+    "                Role: <role>\n"
+    "                Content: <content>\n"
+    "    Raises:\n"
+    "        PromptError: In case of unknown name or invalid arguments.\n"
+    '    """\n\n'
+)
+
 FIRST_INSTRUCTS = "The variables will be persistent between calls.\n\n"
 
 
@@ -35,10 +54,12 @@ class ManualMaker:
         config: SandboxConfig,
         resources: list[Resource],
         resources_temp: list[ResourceTemplate],
+        prompts: list[Prompt],
     ):
         self.tools = tools
         self.config = config
         self.resources = resources
+        self.prompts = prompts
         self.resources_temp = resources_temp
         self.converter: dict[str, str] = {
             "string": "str",
@@ -172,5 +193,33 @@ class ManualMaker:
                     f"    {resource_temp.description}"
                     f"{self._mime_suffix(resource_temp.mime_type)}\n"
                 )
+        if len(self.prompts) > 0:
+            manual += RETRIEVE_PROMPT
+            manual += "Prompts (retrieve with retrieve_prompt(name, args)):\n"
+            for prompt in self.prompts:
+                p_args: str = ""
+                descr: str = (
+                    prompt.description
+                    if prompt.description
+                    else "No description available."
+                )
+
+                if not prompt.arguments:
+                    p_args = " No arguments needed.\n"
+                else:
+                    p_args += "\n"
+                    for arg in prompt.arguments:
+                        arg_descr: str = (
+                            arg.description
+                            if arg.description
+                            else "No description available."
+                        )
+                        arg_required: bool = bool(arg.required)
+                        p_args += f"        {arg.name}:\n"
+                        p_args += f"            Description: {arg_descr}\n"
+                        p_args += f"            Required: {arg_required}\n"
+                manual += f"- {prompt.name}:\n"
+                manual += f"    Description: {descr}\n"
+                manual += f"    Arguments:{p_args}"
 
         return manual

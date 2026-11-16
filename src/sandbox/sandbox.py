@@ -3,25 +3,24 @@ import sys
 import time
 
 from src.sandbox_port import ExecutionResult, SandboxError, SandboxPort
-from typing import Any, IO, Literal, Callable
+from src.sandbox.output_buffer import OutputBuffer
+from typing import Any, IO, Literal
 from threading import Thread
-from json import JSONDecodeError
+from src.sandbox.protocol import server_call, check_protocol
 from queue import Queue, Empty
 from src.models import SandboxConfig
 from pathlib import Path
 from resource import RLIMIT_AS, setrlimit
 from subprocess import PIPE, Popen, TimeoutExpired
 from src.sandbox.mcp_client import MCPClient
-from mcp.types import Tool, ResourceTemplate, Resource
-from src.sandbox.errors import ToolExecutionError, ResourcesError
+from mcp.types import Tool, ResourceTemplate, Resource, Prompt
+from src.sandbox.errors import (
+    ToolExecutionError,
+    ResourcesError,
+    PromptError,
+    ProtocolError,
+)
 from src.sandbox.manual import ManualMaker
-
-# Maximum number of characters of stdout returned for one execution.
-# Only the beginning and the end are kept (half each): the middle is
-# counted but never stored, so the parent's memory stays bounded even
-# if the code prints without stopping.
-MAX_OUTPUT_CHARS = 7000
-HALF_OUTPUT_CHARS = MAX_OUTPUT_CHARS // 2
 
 
 class Sandbox(SandboxPort):
@@ -50,6 +49,7 @@ class Sandbox(SandboxPort):
         self.list_tools: list[Tool] = []
         self.list_resources: list[Resource] = []
         self.list_resources_temp: list[ResourceTemplate] = []
+        self.list_prompts: list[Prompt] = []
         self.monitor: Thread | None = None
         self.messages: Queue[str] = Queue()
         if transport and address:
@@ -93,47 +93,6 @@ class Sandbox(SandboxPort):
         )
         self.monitor.start()
 
-    @staticmethod
-    def _server_call(
-        limit: float,
-        function: Callable[..., dict[str, Any]],
-        stdin: IO[str],
-        answer: dict[str, Any],
-    ) -> float:
-        start = time.monotonic()
-        response = function(request=answer)
-        stdin.write(json.dumps(response) + "\n")
-        stdin.flush()
-        limit += time.monotonic() - start
-        return limit
-
-    @staticmethod
-    def _truncate(part1: str, part2: str, length: int) -> str:
-        """Join the kept beginning and end of the stdout.
-
-        If more characters were printed than MAX_OUTPUT_CHARS, a marker
-        giving the number of characters removed is put between the two
-        parts.
-
-        Args:
-            part1: First characters of the stdout (at most
-                HALF_OUTPUT_CHARS).
-            part2: Last characters of the stdout (at most
-                HALF_OUTPUT_CHARS).
-            length: Total number of characters printed by the code.
-
-        Returns:
-            The stdout to give to the agent, possibly truncated.
-        """
-        nb_truncate = length - MAX_OUTPUT_CHARS
-        if nb_truncate > 0:
-            msg: str = (
-                f"[Truncated]: {nb_truncate} characters on a"
-                f" total of {length}."
-            )
-            return f"{part1}...\n{msg}\n...{part2}"
-        return part1 + part2
-
     def _reader(self, stdout: IO[str], queue: Queue[str]) -> None:
         """A thread monitor routine responsible for reading the worker's output
         and triggering the sentinel when worker is closed (timeout, kill or
@@ -149,45 +108,6 @@ class Sandbox(SandboxPort):
             queue.put(brut_answer)
             if brut_answer == "":
                 break
-
-    def _format_part_one(self, msg: str, part1: str) -> tuple[str, str]:
-        """Add a new piece of stdout while the beginning is not full.
-
-        The piece fills the beginning; what does not fit goes to the
-        end, which keeps only its last characters.
-
-        Args:
-            msg: Text just printed by the code.
-            part1: Beginning of the stdout received so far.
-
-        Returns:
-            The new beginning and the new end of the stdout.
-        """
-        remain_space: int = HALF_OUTPUT_CHARS - len(part1)
-
-        if remain_space > len(msg):
-            return (part1 + msg, "")
-        else:
-            part1 += msg[:remain_space]
-            part2 = self._format_part_two(msg[remain_space:])
-            return (part1, part2)
-
-    @staticmethod
-    def _format_part_two(msg: str) -> str:
-        """Keep only the last HALF_OUTPUT_CHARS characters of text.
-
-        Called after each addition to the end of the stdout, so that it
-        never grows beyond the limit (sliding window).
-
-        Args:
-            msg: End of the stdout with the text just printed added.
-
-        Returns:
-            The last characters of msg, or msg itself if short enough.
-        """
-        if len(msg) > HALF_OUTPUT_CHARS:
-            return msg[-HALF_OUTPUT_CHARS:]
-        return msg
 
     def execute(
         self, code: str, timeout: float | None = None
@@ -214,10 +134,7 @@ class Sandbox(SandboxPort):
             SandboxError: If the sandbox is not started.
         """
 
-        exec_stdout_part1: str = ""
-        exec_stdout_part2: str = ""
-        length = 0
-
+        output: OutputBuffer = OutputBuffer()
         limit = (
             self.max_time if timeout is None else min(timeout, self.max_time)
         ) + time.monotonic()
@@ -228,7 +145,7 @@ class Sandbox(SandboxPort):
         except BrokenPipeError:
             exit_code = self._restart(kill=False)
             return ExecutionResult(
-                stdout=exec_stdout_part1,
+                stdout=output.render(),
                 state_reset=True,
                 error=f"Worker process exited with code {exit_code}.",
             )
@@ -242,9 +159,7 @@ class Sandbox(SandboxPort):
             except Empty:
                 self._restart(kill=True)
                 return ExecutionResult(
-                    stdout=self._truncate(
-                        exec_stdout_part1, exec_stdout_part2, length
-                    ),
+                    stdout=output.render(),
                     timed_out=True,
                     state_reset=True,
                 )
@@ -254,41 +169,24 @@ class Sandbox(SandboxPort):
             if brut_answer == "":
                 exit_code = self._restart(kill=False)
                 return ExecutionResult(
-                    stdout=self._truncate(
-                        exec_stdout_part1, exec_stdout_part2, length
-                    ),
+                    stdout=output.render(),
                     state_reset=True,
                     error=f"Worker process exited with code {exit_code}.",
                 )
 
             try:
-                answer = json.loads(brut_answer)
-            # TODO: étendre ce except à toute ligne qui n'est
-            # pas un message valide du protocole. Le code peut
-            # écrire sur le fd 1 du worker (os.write, évasions
-            # connues), et 3 cas arrivent ici :
-            #   - pas du JSON ("hello")         ->
-            #     JSONDecodeError (géré ci-dessous)
-            #   - JSON mais pas un dict ("42")  -> TypeError
-            #     sur `"tool_call" in answer`
-            #   - dict sans les clés attendues  -> KeyError
-            #     sur answer["interrupt"]
-            # Tous doivent finir dans UNE branche :
-            # restart(kill=True) + ExecutionResult, sinon les
-            # réponses suivantes sont décalées d'une exécution.
-            except JSONDecodeError:
+                answer = check_protocol(brut_answer)
+            except ProtocolError:
                 self._restart(kill=True)
                 return ExecutionResult(
-                    stdout=self._truncate(
-                        exec_stdout_part1, exec_stdout_part2, length
-                    ),
+                    stdout=output.render(),
                     state_reset=True,
                     error="Your code wrote directly to the process's output"
                     " without using 'print'; the sandbox was restarted, and"
                     " the variables were lost.",
                 )
             if "tool_call" in answer:
-                limit = self._server_call(
+                limit = server_call(
                     limit=limit,
                     function=self._handle_call_tool,
                     stdin=stdin,
@@ -296,26 +194,23 @@ class Sandbox(SandboxPort):
                 )
                 continue
             if "resource_call" in answer:
-                limit = self._server_call(
+                limit = server_call(
                     limit=limit,
                     function=self._handle_resources_call,
                     stdin=stdin,
                     answer=answer,
                 )
                 continue
+            if "prompt_call" in answer:
+                limit = server_call(
+                    limit=limit,
+                    function=self._handle_prompt_call,
+                    stdin=stdin,
+                    answer=answer,
+                )
+                continue
             if "exec_stdout" in answer:
-                if length < HALF_OUTPUT_CHARS:
-                    exec_stdout_part1, exec_stdout_part2 = (
-                        self._format_part_one(
-                            answer["exec_stdout"], exec_stdout_part1
-                        )
-                    )
-                else:
-                    exec_stdout_part2 += answer["exec_stdout"]
-                    exec_stdout_part2 = self._format_part_two(
-                        exec_stdout_part2
-                    )
-                length += len(answer["exec_stdout"])
+                output.add(answer["exec_stdout"])
                 continue
 
             if answer["interrupt"] is not None:
@@ -325,9 +220,7 @@ class Sandbox(SandboxPort):
                     raise SystemExit(answer["exit_code"])
 
             return ExecutionResult(
-                stdout=self._truncate(
-                    exec_stdout_part1, exec_stdout_part2, length
-                ),
+                stdout=output.render(),
                 error=answer["error"],
                 memory_exceeded=answer["memory_exceeded"],
                 final_answer=answer["answer"],
@@ -342,6 +235,19 @@ class Sandbox(SandboxPort):
         try:
             response = self.client.read_resource(uri)
         except ResourcesError as e:
+            return {"result": None, "error": str(e)}
+        return {"result": response, "error": None}
+
+    def _handle_prompt_call(
+        self, request: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self.client is None:
+            raise SandboxError("MCP server isn't connected")
+        name: str = request["prompt_call"]
+        args: dict[str, str] | None = request["args"]
+        try:
+            response = self.client.retrieve_prompt(name, args)
+        except PromptError as e:
             return {"result": None, "error": str(e)}
         return {"result": response, "error": None}
 
@@ -387,6 +293,7 @@ class Sandbox(SandboxPort):
             self.list_resources, self.list_resources_temp = (
                 self.client.get_resources()
             )
+            self.list_prompts = self.client.get_prompts()
         self.start()
         return self
 
@@ -452,5 +359,6 @@ class Sandbox(SandboxPort):
             self.config,
             self.list_resources,
             self.list_resources_temp,
+            self.list_prompts
         )
         return manual_maker.construct()
