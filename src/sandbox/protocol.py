@@ -9,6 +9,7 @@ AUTHORIZED_KEYS: dict[str, dict[str, Any]] = {
     "exec_stdout": {"exec_stdout": str},
     "tool_call": {"tool_call": str, "args": list, "kwargs": dict},
     "resource_call": {"resource_call": str},
+    "prompt_call": {"prompt_call": str, "args": (dict, type(None))},
 }
 
 FINAL_KEYS: dict[str, Any] = {

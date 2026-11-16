@@ -13,10 +13,11 @@ from pathlib import Path
 from resource import RLIMIT_AS, setrlimit
 from subprocess import PIPE, Popen, TimeoutExpired
 from src.sandbox.mcp_client import MCPClient
-from mcp.types import Tool, ResourceTemplate, Resource
+from mcp.types import Tool, ResourceTemplate, Resource, Prompt
 from src.sandbox.errors import (
     ToolExecutionError,
     ResourcesError,
+    PromptError,
     ProtocolError,
 )
 from src.sandbox.manual import ManualMaker
@@ -48,6 +49,7 @@ class Sandbox(SandboxPort):
         self.list_tools: list[Tool] = []
         self.list_resources: list[Resource] = []
         self.list_resources_temp: list[ResourceTemplate] = []
+        self.list_prompts: list[Prompt] = []
         self.monitor: Thread | None = None
         self.messages: Queue[str] = Queue()
         if transport and address:
@@ -199,6 +201,14 @@ class Sandbox(SandboxPort):
                     answer=answer,
                 )
                 continue
+            if "prompt_call" in answer:
+                limit = server_call(
+                    limit=limit,
+                    function=self._handle_prompt_call,
+                    stdin=stdin,
+                    answer=answer,
+                )
+                continue
             if "exec_stdout" in answer:
                 output.add(answer["exec_stdout"])
                 continue
@@ -225,6 +235,19 @@ class Sandbox(SandboxPort):
         try:
             response = self.client.read_resource(uri)
         except ResourcesError as e:
+            return {"result": None, "error": str(e)}
+        return {"result": response, "error": None}
+
+    def _handle_prompt_call(
+        self, request: dict[str, Any]
+    ) -> dict[str, Any]:
+        if self.client is None:
+            raise SandboxError("MCP server isn't connected")
+        name: str = request["prompt_call"]
+        args: dict[str, str] | None = request["args"]
+        try:
+            response = self.client.retrieve_prompt(name, args)
+        except PromptError as e:
             return {"result": None, "error": str(e)}
         return {"result": response, "error": None}
 
@@ -270,6 +293,7 @@ class Sandbox(SandboxPort):
             self.list_resources, self.list_resources_temp = (
                 self.client.get_resources()
             )
+            self.list_prompts = self.client.get_prompts()
         self.start()
         return self
 
@@ -335,5 +359,6 @@ class Sandbox(SandboxPort):
             self.config,
             self.list_resources,
             self.list_resources_temp,
+            self.list_prompts
         )
         return manual_maker.construct()
