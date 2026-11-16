@@ -22,6 +22,12 @@ class TaskLimits(BaseModel):
     max_output_tokens: int = Field(
         ..., gt=0, description="Output tokens allowed, summed over all steps"
     )
+    max_output_tokens_per_call: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="Output tokens allowed to one LLM call; None leaves "
+        "only the budget of the whole task",
+    )
     timeout_seconds: float = Field(
         ..., gt=0, description="Wall-clock time allowed by the subject"
     )
@@ -45,7 +51,10 @@ class TaskLimits(BaseModel):
 
     @classmethod
     def mbpp(
-        cls, max_iterations: int = 10, time_margin_seconds: float = 15.0
+        cls,
+        max_iterations: int = 10,
+        time_margin_seconds: float = 15.0,
+        max_output_tokens_per_call: Optional[int] = None,
     ) -> "TaskLimits":
         """Build the limits of an MBPP task.
 
@@ -53,16 +62,21 @@ class TaskLimits(BaseModel):
             max_iterations: Steps allowed; configurable (subject V.3.4),
                 but never above the subject's 10.
             time_margin_seconds: Time kept back from the 120 s timeout.
+            max_output_tokens_per_call: Cap on one LLM call, or None.
 
         Raises:
             ValueError: ``max_iterations`` is above the subject's limit.
         """
         return cls._within_subject(10, 6_000, 1_500, 120.0,
-                                   max_iterations, time_margin_seconds)
+                                   max_iterations, time_margin_seconds,
+                                   max_output_tokens_per_call)
 
     @classmethod
     def swebench(
-        cls, max_iterations: int = 30, time_margin_seconds: float = 30.0
+        cls,
+        max_iterations: int = 30,
+        time_margin_seconds: float = 30.0,
+        max_output_tokens_per_call: Optional[int] = None,
     ) -> "TaskLimits":
         """Build the limits of a SWE-bench task.
 
@@ -70,12 +84,14 @@ class TaskLimits(BaseModel):
             max_iterations: Steps allowed; configurable, but never above
                 the subject's 30.
             time_margin_seconds: Time kept back from the 900 s timeout.
+            max_output_tokens_per_call: Cap on one LLM call, or None.
 
         Raises:
             ValueError: ``max_iterations`` is above the subject's limit.
         """
         return cls._within_subject(30, 300_000, 10_000, 900.0,
-                                   max_iterations, time_margin_seconds)
+                                   max_iterations, time_margin_seconds,
+                                   max_output_tokens_per_call)
 
     @classmethod
     def _within_subject(
@@ -86,6 +102,7 @@ class TaskLimits(BaseModel):
         timeout_seconds: float,
         max_iterations: int,
         time_margin_seconds: float,
+        max_output_tokens_per_call: Optional[int],
     ) -> "TaskLimits":
         """Build the limits, checking the steps against the subject's."""
         if max_iterations > subject_iterations:
@@ -97,6 +114,7 @@ class TaskLimits(BaseModel):
             max_iterations=max_iterations,
             max_input_tokens=max_input_tokens,
             max_output_tokens=max_output_tokens,
+            max_output_tokens_per_call=max_output_tokens_per_call,
             timeout_seconds=timeout_seconds,
             time_margin_seconds=time_margin_seconds,
         )

@@ -21,7 +21,6 @@ class ObservationFormatter:
     # The loop stops right after this step: the model never reads it, but
     # solution.json does, and must say what really happened.
     _FINAL_ANSWER = "final_answer() was called: the task ends here."
-    _TRUNCATED = "[Output truncated: too long.]"
     _TIMED_OUT = (
         "Execution stopped: time limit reached. The output above is partial."
     )
@@ -34,6 +33,12 @@ class ObservationFormatter:
         "Same code and same result as step {step}. Sending it again will "
         "not help: try something different."
     )
+
+    _ANSWER_CUT = (
+        "Your answer was cut after {tokens} tokens, so its end is missing. "
+        "Write a shorter answer."
+    )
+
     _CUT_MARKER = "\n[... {cut} characters cut ...]\n"
     # Characters kept free for the marker, so the result fits max_chars.
     _MARKER_ROOM = 40
@@ -61,12 +66,14 @@ class ObservationFormatter:
         extraction: ExtractionResult,
         result: Optional[ExecutionResult],
         repeat_of: Optional[int] = None,
+        cut_at: Optional[int] = None,
     ) -> str:
         """Build the observation text.
 
         Extraction warnings come first, so the model learns what was
         assumed about its code before reading what the code did. The
-        repetition notice comes last: a long observation keeps its end.
+        cut-answer and repetition notices come last: a long observation
+        keeps its end.
 
         Args:
             extraction: What was found in the model's answer.
@@ -75,9 +82,14 @@ class ObservationFormatter:
             repeat_of: Number of the earlier step that had the same code
                 and the same result (``RepeatDetector``), or None. Not
                 used when no code was run.
+            cut_at: Output tokens of the answer when the LLM was stopped
+                by its token limit, or None. Reported even when no code
+                was run: it explains why none was found.
         """
         parts: List[str] = list(extraction.warnings)
         if result is None:
+            if cut_at is not None:
+                parts.append(self._ANSWER_CUT.format(tokens=cut_at))
             return self._shorten("\n".join(parts))
         clean = result.error is None and not (
             result.timed_out or result.memory_exceeded
@@ -92,8 +104,6 @@ class ObservationFormatter:
         else:
             empty = self._SILENT_RUN if clean else self._NO_OUTPUT
             parts.append(output or empty)
-        if result.truncated:
-            parts.append(self._TRUNCATED)
         if result.timed_out:
             parts.append(self._TIMED_OUT)
         if result.memory_exceeded:
@@ -103,6 +113,8 @@ class ObservationFormatter:
             parts.append(result.error.rstrip("\n"))
         if result.state_reset:
             parts.append(self._STATE_RESET)
+        if cut_at is not None:
+            parts.append(self._ANSWER_CUT.format(tokens=cut_at))
         if repeat_of is not None:
             parts.append(self._REPEATED.format(step=repeat_of))
         return self._shorten("\n".join(parts))
