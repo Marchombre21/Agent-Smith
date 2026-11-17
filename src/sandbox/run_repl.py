@@ -1,7 +1,21 @@
 import readline  # noqa: F401  (enables arrow keys/history in input())
 import codeop
+import sys
 from src.sandbox.sandbox import Sandbox
 from src.sandbox_port import ExecutionResult
+
+
+def sandbox_exec(sandbox: Sandbox, lines: list[str]) -> None:
+    result: ExecutionResult = sandbox.execute("\n".join(lines))
+    print(result.stdout, end="")
+    if result.error:
+        print(result.error.rstrip("\n"))
+    if result.timed_out:
+        print("Timeout: execution killed")
+    if result.state_reset:
+        print("Variables lost")
+    if result.final_answer is not None:
+        print(f"Final answer: {result.final_answer}")
 
 
 def run_repl(sandbox: Sandbox) -> None:
@@ -24,9 +38,17 @@ def run_repl(sandbox: Sandbox) -> None:
     while True:
 
         try:
-            line = input("... " if lines else ">>> ")
+            if sys.stdin.isatty():
+                line = input("... " if lines else ">>> ")
+            else:
+                sandbox_exec(sandbox, [sys.stdin.read()])
+                break
         except EOFError:
+            if not lines:
+                print()
+                break
             print()
+            sandbox_exec(sandbox, lines)
             break
         if not lines:
             if line.strip() == "exit":
@@ -40,14 +62,5 @@ def run_repl(sandbox: Sandbox) -> None:
             incomplete = False
         if incomplete:
             continue
-        result: ExecutionResult = sandbox.execute("\n".join(lines))
+        sandbox_exec(sandbox, lines)
         lines = []
-        print(result.stdout, end="")
-        if result.error:
-            print(result.error.rstrip("\n"))
-        if result.timed_out:
-            print("Timeout: execution killed")
-        if result.state_reset:
-            print("Variables lost")
-        if result.final_answer is not None:
-            print(f"Final answer: {result.final_answer}")
