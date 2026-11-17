@@ -46,7 +46,7 @@ class Sandbox(SandboxPort):
         self.memory = config.max_memory_mb
         self.proc: Popen[str] | None = None
         self.client: MCPClient | None = None
-        self. list_tools: list[Tool] = []
+        self.list_tools: list[Tool] = []
         self.list_resources: list[Resource] = []
         self.list_resources_temp: list[ResourceTemplate] = []
         self.list_prompts: list[Prompt] = []
