@@ -180,7 +180,9 @@ class MCPClient:
                 f"MCP server failed during resource retrieval: {e}"
             ) from e
 
-    def call_tool(self, name: str, args: dict[str, Any]) -> str | Any:
+    def call_tool(
+        self, name: str, args: dict[str, Any]
+    ) -> str:
         """Call a tool on the server.
 
         Args:
@@ -188,19 +190,24 @@ class MCPClient:
             args (dict[str, Any]): Args to add to the tool execution
 
         Returns:
-            str | Any: The result of the tool execution
+            str: The result of the tool execution
         """
         client = self._get_client
         try:
             result = self.loop.run_until_complete(
                 client.call_tool(name=name, arguments=args)
             )
-            if result.data is not None:
-                return result.data
-            else:
-                return "\n".join(
-                    c.text for c in result.content if hasattr(c, "text")
-                )
+            content_res: list[str] = []
+            for content in result.content:
+                if isinstance(content, TextContent):
+                    content_res.append(content.text)
+                else:
+                    content_res.append(
+                        "Not a text content. Impossible to display."
+                    )
+            if not content_res:
+                return "The tool has no response to return."
+            return "\n".join(content_res)
         except ToolError as e:
             raise ToolExecutionError(f"Call tools failed: {e}") from e
         except Exception as e:

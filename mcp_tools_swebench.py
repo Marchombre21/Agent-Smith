@@ -24,9 +24,11 @@ TESTBED_PATH = os.path.abspath(testbed_path_temp)
 def _resolve_path(path: str) -> str:
     """Return the absolute normalized path, or raise ToolError if outside."""
 
+    if path.startswith("/testbed") and Path(path).is_relative_to("/testbed"):
+        path = path.replace("/testbed", TESTBED_PATH, 1)
     complete_filepath = os.path.normpath(os.path.join(TESTBED_PATH, path))
     if not Path(complete_filepath).is_relative_to(TESTBED_PATH):
-        raise ToolError(f"You cannot access outside of {TESTBED_PATH}")
+        raise ToolError("You cannot access outside of /testbed")
 
     return complete_filepath
 
@@ -493,14 +495,16 @@ def get_patch() -> str:
 
 
 @mcp.tool()
-def run_command(command: str, workdir: str = ".") -> dict[str, str | int]:
+def run_command(command: str, workdir: str = ".") -> str:
     """Execute a shell command in the targeted workdir. Return the result of
-    the subprocess (stdout, stderr and exit_code) in dict format (
-    {
-    'stdout': <stdout>,
-    'stderr': <stderr>,
-    'exit_code': <return_code>,
-    }).
+    the subprocess (stdout, stderr and exit_code) in string format (
+    '--- stdout ---
+    <stdout>
+    --- stderr ---
+    <stderr>
+    --- exit_code ---
+    <return_code>'
+    ).
     If stdout or stderr are too long, they will be truncated by the beginning
     and only the end of message will be returned.
     The execution has a timeout to ensure that no blockages can occur.
@@ -535,20 +539,26 @@ def run_command(command: str, workdir: str = ".") -> dict[str, str | int]:
             f"\n[Command killed after {COMMAND_TIMEOUT}s" " timeout]"
         )
 
-    return {
-        "stdout": _truncate_by_end(run_return.stdout, 50),
-        "stderr": _truncate_by_end(run_return.stderr, 50),
-        "exit_code": run_return.returncode,
-    }
+    return (
+        f"--- exit_code ---\n{run_return.returncode}\n"
+        f"--- stdout ---\n{_truncate_by_end(run_return.stdout, 50)}\n"
+        f"--- stderr ---\n{_truncate_by_end(run_return.stderr, 50)}\n"
+    )
 
 
 @mcp.tool()
-def run_tests() -> dict[str, str | int]:
+def run_tests() -> str:
     """Run the evaluation script of the task (the official tests).
 
-    Returns a dict with "stdout", "stderr" and "exit_code". The test
-    results are in the summary at the end of "stdout": the exit code
-    does NOT tell whether the tests passed (it is 0 even when some
+    Returns a string with "stdout", "stderr" and "exit_code" in string format (
+    '--- stdout ---
+    <stdout>
+    --- stderr ---
+    <stderr>
+    --- exit_code ---
+    <return_code>'
+    ). The test results are in the summary at the end of "stdout": the exit
+    code does NOT tell whether the tests passed (it is 0 even when some
     fail). Each output is truncated to its last 100 lines.
 
     The script is killed after 100 seconds. The state of the repository
@@ -598,11 +608,11 @@ def run_tests() -> dict[str, str | int]:
                     f" them again : {restore_result.stderr}]"
                 )
 
-    return {
-        "stdout": _truncate_by_end(tests_results.stdout, 100),
-        "stderr": _truncate_by_end(tests_results.stderr, 100),
-        "exit_code": tests_results.returncode,
-    }
+    return (
+        f"--- exit_code ---\n{tests_results.returncode}\n"
+        f"--- stdout ---\n{_truncate_by_end(tests_results.stdout, 100)}\n"
+        f"--- stderr ---\n{_truncate_by_end(tests_results.stderr, 100)}\n"
+    )
 
 
 if __name__ == "__main__":
