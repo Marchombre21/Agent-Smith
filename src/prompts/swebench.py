@@ -26,8 +26,9 @@ print(run_command("python -c '...'", "/testbed")).
 only: include the lines around it. Change as little as needed and do \
 not edit the tests. Never install or upgrade packages.
 5. Run the tests and print only the end of the report, where the \
-summary is: print(run_tests().split("--- stderr ---")[0][-1500:]). \
-Read which tests fail. Fix, then run them again.
+summary is: out, err = run_tests().split("--- stderr ---"); \
+print(out[-1000:], err[-1000:]). Read which tests fail. Fix, then run \
+them again.
 6. When the tests pass, call final_answer(get_patch()).
 Work only from the repository and the tools: never look for the fix \
 in a pull request, an issue or any other outside source.
@@ -49,7 +50,8 @@ Observation: 42: def parse_date(text):
 Thought: The year needs 4 digits: %Y, not %y. I fix it and run the tests.
 ```python
 print(edit_file("/testbed/pkg/dates.py", '"%d/%m/%y"', '"%d/%m/%Y"'))
-print(run_tests().split("--- stderr ---")[0][-1500:])
+out, err = run_tests().split("--- stderr ---")
+print(out[-1000:], err[-1000:])
 ```<end_code>
 Observation: ... all tests passed
 Thought: The tests pass.
