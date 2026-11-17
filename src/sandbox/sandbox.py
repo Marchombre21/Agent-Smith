@@ -258,7 +258,7 @@ class Sandbox(SandboxPort):
         name = request["tool_call"]
         for tool in self.list_tools:
             if tool.name == name:
-                params: list[str] = list(tool.input_schema["properties"])
+                params: list[str] = list(tool.inputSchema["properties"])
 
                 if len(params) < len(request["args"]):
                     return {

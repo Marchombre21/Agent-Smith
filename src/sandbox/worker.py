@@ -245,7 +245,6 @@ def main() -> None:
     real_open = builtins.open
     real_import = builtins.__import__
     builtins_dict_copy = dict(real_builtins)
-    builtins_dict_copy["final_answer"] = final_answer
 
     def check_import(
         name: str,
@@ -306,17 +305,18 @@ def main() -> None:
     builtins_dict_copy["__import__"] = check_import
     builtins_dict_copy["exit"] = my_exit
     builtins_dict_copy["quit"] = my_exit
-    builtins_dict_copy["read_resource"] = _make_read_resources(real_stdout)
-    builtins_dict_copy["retrieve_prompt"] = _make_retrieve_prompt(real_stdout)
     builtins_dict_copy.pop("__loader__")
     builtins_dict_copy.pop("__spec__")
     for name in RESTRICTED:
         builtins_dict_copy[name] = _restrict_builtins(name)
 
-    for name in list_tools:
-        builtins_dict_copy[name] = _make_tool(name, real_stdout)
+    globals_values: dict[str, Any] = {"__builtins__": builtins_dict_copy}
 
-    globals_values = {"__builtins__": builtins_dict_copy}
+    for name in list_tools:
+        globals_values[name] = _make_tool(name, real_stdout)
+    globals_values["final_answer"] = final_answer
+    globals_values["read_resource"] = _make_read_resources(real_stdout)
+    globals_values["retrieve_prompt"] = _make_retrieve_prompt(real_stdout)
 
     while True:
         line = sys.stdin.readline()

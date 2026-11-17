@@ -171,7 +171,7 @@ class MCPClient:
                 if isinstance(elem, TextResourceContents):
                     final_result.append(elem.text)
                 if isinstance(elem, BlobResourceContents):
-                    final_result.append(f"[binary content]: {elem.mime_type}")
+                    final_result.append(f"[binary content]: {elem.mimeType}")
             return "\n".join(final_result)
         except (McpError, ValueError) as e:
             raise ResourcesError(f"Resources retrieval failed: {e}") from e
