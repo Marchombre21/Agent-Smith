@@ -105,6 +105,9 @@ class DockerContainer:
         at once without a terminal, and ``sleep infinity`` would leave
         the container behind if our process were killed. ``--rm`` makes
         Docker delete the container as soon as ``sleep`` exits.
+        ``--network none`` gives the container no network: the model's
+        commands cannot download a package or fetch a solution from an
+        outside source (subject VI.4.1).
         No timeout on ``docker run``: Docker may first have to pull the
         image; the task's time limit (SIGTERM) bounds the wait.
 
@@ -115,7 +118,8 @@ class DockerContainer:
             raise ContainerError("the container is already started")
         self._name = f"{self._NAME_PREFIX}{uuid.uuid4().hex[:12]}"
         output = self._docker(
-            ["run", "-d", "--rm", "--name", self._name, self._image,
+            ["run", "-d", "--rm", "--network", "none",
+             "--name", self._name, self._image,
              "sleep", str(self._lifetime_seconds)],
             timeout=None,
         )
