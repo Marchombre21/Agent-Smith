@@ -79,7 +79,7 @@ def _run() -> None:
     config: SandboxConfig = load_config(args.sand_template)
 
     env = {}
-    env_vars = ["TESTBED_PATH", "CONTAINER_ID"]
+    env_vars = ["TESTBED_PATH", "CONTAINER_ID", "SCRIPT_PATHS"]
 
     for var in env_vars:
         temp_var = os.environ.get(var)

@@ -5,6 +5,7 @@ from subprocess import TimeoutExpired
 from fastmcp import FastMCP
 
 mcp = FastMCP("mcp_tools_mbpp")
+TIMEOUT = 5
 
 
 @mcp.tool()
@@ -33,13 +34,13 @@ def run_tests(code: str, test_list: list[str]) -> str:
                 [sys.executable, "-c", full_code],
                 capture_output=True,
                 text=True,
-                timeout=3,
+                timeout=TIMEOUT,
             )
         except TimeoutExpired:
             result = {
                 "success": False,
                 "message": f"Timeout error with test {test}",
-                "output": "Timeout after 3s.",
+                "output": f"Timeout after {TIMEOUT}s.",
             }
             return json.dumps(result)
 
