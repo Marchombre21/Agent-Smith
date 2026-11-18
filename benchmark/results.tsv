@@ -1,0 +1,33 @@
+codestral-latest	django-11066	PASS	7	27583	373	86	
+codestral-latest	xarray-4629	PASS	30	163326	1462	464	
+codestral-latest	scikit-learn-13439	PASS	4	14375	273	25	
+gemini-3.1-flash-lite	django-11066	FAIL	3	14253	1766	26	
+gemini-3.1-flash-lite	xarray-4629	FAIL	4	19380	1593	186	
+gemini-3.1-flash-lite	scikit-learn-13439	FAIL	12	57659	2010	117	
+@cf/nvidia/nemotron-3-120b-a12b	django-11066	FAIL	30	133936	4576	84	iteration limit reached (30)
+@cf/nvidia/nemotron-3-120b-a12b	xarray-4629	FAIL	30	184963	9089	290	iteration limit reached (30)
+@cf/nvidia/nemotron-3-120b-a12b	scikit-learn-13439	FAIL	30	176210	9951	153	iteration limit reached (30)
+nvidia/nemotron-3-ultra-550b-a55b:free	django-11066	FAIL	30	128209	1310	75	iteration limit reached (30)
+nvidia/nemotron-3-ultra-550b-a55b:free	xarray-4629	FAIL	30	132480	1240	89	iteration limit reached (30)
+nvidia/nemotron-3-ultra-550b-a55b:free	scikit-learn-13439	FAIL	30	157681	2289	102	iteration limit reached (30)
+ministral-14b-latest	django-11066	PASS	5	20160	398	73	
+ministral-14b-latest	xarray-4629	PASS	5	20706	442	72	
+ministral-14b-latest	scikit-learn-13439	FAIL	21	122762	10000	344	output token limit reached (10000)
+@cf/mistralai/mistral-small-3.1-24b-instruct	django-11066	FAIL	30	288488	9321	243	iteration limit reached (30)
+@cf/mistralai/mistral-small-3.1-24b-instruct	xarray-4629	FAIL	30	144053	1243	62	iteration limit reached (30)
+@cf/mistralai/mistral-small-3.1-24b-instruct	scikit-learn-13439	PASS	12	45970	489	41	
+poolside/laguna-xs-2.1	django-11066	PASS	16	75840	888	66	
+poolside/laguna-xs-2.1	xarray-4629	PASS	17	86905	1429	68	
+poolside/laguna-xs-2.1	scikit-learn-13439	FAIL	30	168729	2170	111	iteration limit reached (30)
+nvidia/nemotron-3.5-bolt-e4b	django-11066	PASS	5	21032	362	28	
+nvidia/nemotron-3.5-bolt-e4b	xarray-4629	PASS	4	17467	374	29	
+nvidia/nemotron-3.5-bolt-e4b	scikit-learn-13439	FAIL	19	102370	2320	64	
+ministral-8b-latest	django-11066	PASS	8	33927	728	92	
+ministral-8b-latest	xarray-4629	PASS	5	20585	377	72	
+ministral-8b-latest	scikit-learn-13439	PASS	9	44288	1093	137	
+gemini-3.5-flash-lite	django-11066	PASS	18	101854	916	125	
+gemini-3.5-flash-lite	xarray-4629	PASS	12	60037	451	105	
+gemini-3.5-flash-lite	scikit-learn-13439	FAIL	30	156182	1866	143	iteration limit reached (30)
+nvidia/nemotron-3-ultra-550b-a55b	django-11066	PASS	9	45487	1014	95	
+nvidia/nemotron-3-ultra-550b-a55b	scikit-learn-13439	FAIL	30	192594	3162	164	iteration limit reached (30)
+nvidia/nemotron-3-ultra-550b-a55b	xarray-4629	FAIL	30	128029	1085	82	iteration limit reached (30)
