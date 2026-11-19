@@ -591,56 +591,46 @@ The full report is in [`BENCHMARK_REPORT.md`](BENCHMARK_REPORT.md). The
 
 ### Setup
 
-The agent and its prompt were frozen before the final run. Ten models from
-five free providers (Mistral, Gemini, Cloudflare Workers AI, Nvidia,
-OpenRouter) ran on the same three SWE-bench tasks (`django__django-11066`,
-`scikit-learn__scikit-learn-13439`, `pydata__xarray-4629`), with the limits of
-the subject (30 iterations, 300,000 input tokens, 10,000 output tokens, 900 s).
-A task counts as solved when the official validation says `PASSED`. The three
-tasks come from three different repositories, and the reference model passes
-all of them, so a failure says something about the model being tested.
+128 SWE-bench runs with the agent frozen at one commit: ten models from three
+free providers (Mistral, Gemini, Nvidia) on eight SWE-bench Verified tasks from
+five repositories, then two more passes of the three best models. An earlier
+run on three tasks adds Cloudflare and OpenRouter. Every run uses the
+subject's commands (`dump`, `run-agent` with the 900 s limit, `validate`) and
+the limits of the subject. The task container has no network.
 
 ### Results
 
-| Model | Provider | Solved | Input tokens | Time (s) |
-|---|---|---|---|---|
-| `ministral-8b-latest` | Mistral | **3/3** | 98,800 | 301 |
-| `codestral-latest` | Mistral | **3/3** | 205,284 | 575 |
-| `nemotron-3.5-bolt-e4b` | Nvidia | 2/3 | 140,869 | 121 |
-| `ministral-14b-latest` | Mistral | 2/3 | 163,628 | 489 |
-| `gemini-3.5-flash-lite` | Gemini | 2/3 | 318,073 | 373 |
-| `laguna-xs-2.1` | Nvidia | 2/3 | 331,474 | 245 |
-| `nemotron-3-ultra-550b-a55b` | Nvidia | 1/3 | 366,110 | 341 |
-| `mistral-small-3.1-24b` | Cloudflare | 1/3 | 478,511 | 346 |
-| `gemini-3.1-flash-lite` | Gemini | 0/3 | 91,292 | 329 |
-| `nemotron-3-ultra-550b-a55b:free` | OpenRouter | 0/3 | 418,370 | 266 |
-| `nemotron-3-120b-a12b` | Cloudflare | 0/3 | 495,109 | 527 |
-
-Iterations, output tokens and time per task are in the report. Two more
-Cloudflare models (`llama-4-scout`, `glm-4.7-flash`) could not be tested: the
-free daily quota of the provider was used up, and they are not counted.
+| Model | Provider | Solved | Rate (95 % CI) |
+|---|---|---|---|
+| `ministral-8b-latest` | Mistral | 18/24 | 75 % (55 to 88 %) |
+| `codestral-latest` | Mistral | 16/24 | 67 % (47 to 82 %) |
+| `ministral-14b-latest` | Mistral | 5/8 | 62 % (31 to 86 %) |
+| `mistral-code-latest` | Mistral | 5/8 | 62 % (31 to 86 %) |
+| `gemini-3.5-flash-lite` | Gemini | 5/8 | 62 % (31 to 86 %) |
+| `nemotron-3.5-bolt-e4b` | Nvidia | 14/24 | 58 % (39 to 76 %) |
+| `gemini-3-flash-preview` | Gemini | 1/8 | 12 % (2 to 47 %) |
+| `laguna-xs-2.1` | Nvidia | 1/8 | 12 % (2 to 47 %) |
+| `nemotron-3-ultra-550b-a55b` | Nvidia | 1/8 | 12 % (2 to 47 %) |
+| `gemini-3.1-flash-lite` | Gemini | 0/8 | 0 % (0 to 32 %) |
 
 ### What we see
 
-- **Two models solve all three tasks**, both from Mistral. `ministral-8b` needs
-  half the input tokens and half the time of `codestral` (98,800 against
-  205,284 tokens, 301 s against 575 s).
-- **Loops are the main way to fail.** Of 33 runs, 16 pass and 17 fail, and 12
-  of the failures end at the 30-iteration limit. The repeat warning does not
-  stop them: the model reads it and sends the same call again.
-- **Some models submit without checking.** Two passing runs (`gemini-3.5`)
-  never called `run_tests`. Among the 14 passing runs that did, 11 submitted
-  right after the tests passed.
-- **Provider and model are not the same variable.** `nemotron-3-ultra` solves
-  one task on Nvidia and none on OpenRouter, where the model calls its tools
-  without `print` and reads "printed nothing" until the limit.
-- **Free quotas are a real constraint.** The Cloudflare daily quota stopped
-  two models after two others had used it, which is why the benchmark uses five
-  providers and not the minimum.
-
-The task container has no network access (`--network none`). A review of the
-runs found two models that had installed packages with `pip` before this was
-set; the report explains how those runs were handled.
+- **The three best models cannot be ranked against each other**: their 95 %
+  intervals overlap. `codestral` solves with the fewest steps (4.8 iterations
+  and 19,692 input tokens per solved run, against 11.1 and 61,720 for
+  `ministral-8b`).
+- **Most failures are loops.** 62 of 128 runs fail, and 42 runs end at the
+  30-iteration limit. Models find the right file by step 2; they fail later,
+  repeating the same call.
+- **Without network, two models collapse.** `laguna` solved two of three
+  tasks with network access; it and `nemotron-3-ultra` solve one of eight
+  without: they try `pip install`, it fails, and they loop.
+- **Reasoning models and stop sequences do not mix.** Two Nemotron reasoning
+  models quote `<end_code>` in their hidden reasoning, the stop sequence fires
+  there, and every answer is empty.
+- **Provider reliability differs more than model quality.** Nvidia needed 4
+  retries in 776 requests; Mistral 54 to 165 per model (rate limits); a Gemini
+  preview model lost five runs of eight to its daily quota.
 
 ### Ablations
 
@@ -665,17 +655,15 @@ the three changes shows a gain in pass rate.
 
 Each agent has its own default model, in `configs/agent_*.json`:
 
-- **SWE-bench: `codestral-latest`.** It solves 3/3, and the ablations were run
-  on it. `ministral-8b-latest` also solves 3/3 for half the cost.
-- **MBPP: `nemotron-3.5-bolt-e4b` (Nvidia).** Chosen from 15 exam-like runs
-  (5 random tasks each) per candidate. The three best models solve 85 to 88 %
-  of the tasks, which is within noise, but this one needed no retry and no task
-  took more than 25 s, where the two Mistral models had retries on two tasks
-  out of three and tasks up to 78 s. MBPP allows 120 s per task and the exam
-  does not re-run a failed task. The two agents also use different providers,
-  so they do not share rate limits when they run at the same time.
-Models to disregard (0/3): `nemotron-3-120b-a12b`, `gemini-3.1-flash-lite`
-and the OpenRouter version of `nemotron-3-ultra`.
+- **SWE-bench: `codestral-latest`.** Its pass rate is within noise of
+  `ministral-8b`, and it is the most efficient when it succeeds, with the best
+  submission discipline (15 of 16 solved runs submitted right after the tests
+  passed). The ablations were run on it.
+- **MBPP: `nemotron-3.5-bolt-e4b` (Nvidia).** Chosen from 15 rounds of five
+  random MBPP tasks per candidate: same pass rate as the Mistral models within
+  noise, but no retry and no task above 25 s, where MBPP allows 120 s. The
+  two agents use different providers, so they do not share rate limits when
+  they run at the same time.
 
 ## Resources
 
