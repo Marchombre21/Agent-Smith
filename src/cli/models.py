@@ -76,7 +76,7 @@ class AgentSettings(BaseModel):
         One file per benchmark, shared with the sandbox REPL
         (``uv run sandbox configs/sandbox_mbpp.json``), so that the agent
         and the REPL run the same sandbox. A path is relative to the
-        current directory: the moulinette runs the agent from the root
+        current directory: the grader runs the agent from the root
         of the repository.
 
         Raises:

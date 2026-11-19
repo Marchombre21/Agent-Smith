@@ -1,5 +1,6 @@
 """The Docker container a SWE-bench task runs in, from start to removal."""
 
+import os
 import subprocess
 import sys
 import uuid
@@ -23,19 +24,22 @@ class DockerContainer:
     ``stop()`` removes it. Used as a context manager, the container is
     removed whatever happens in the ``with`` block.
 
-    No container may outlive the run, so three layers back each other:
+    No container may outlive the run, so four layers back each other:
 
     1. A normal end, or an ordinary exception, removes the container
        synchronously and patiently: nothing is in a hurry, and a slow
        Docker daemon must not cost a finished result.
     2. An interruption (SIGTERM becomes ``TerminationRequested``, a
-       ``BaseException``) must stay fast: the moulinette sends SIGKILL
+       ``BaseException``) must stay fast: the grader sends SIGKILL
        10 s later and ``solution.json`` is still to be written. The
        removal gets a short delay and, if it is not enough, is handed to
        a detached process that outlives ours.
-    3. If our process dies without running any code (SIGKILL, crash), the
-       container removes itself: it only sleeps for ``lifetime_seconds``
-       and ``--rm`` deletes it when it exits.
+    3. If our process dies without running any code (SIGKILL, crash), a
+       detached guard removes the container: it waits on a pipe that only
+       our process holds, and the kernel closes it when our process dies.
+    4. If even the guard cannot act, the container removes itself: it
+       only sleeps for ``lifetime_seconds`` and ``--rm`` deletes it when
+       it exits.
 
     The container is removed by its *name*, chosen before ``docker run``:
     if the run is interrupted after Docker created the container but
@@ -85,6 +89,8 @@ class DockerContainer:
         self._spawner = spawner
         self._name: Optional[str] = None
         self._id: Optional[str] = None
+        # Our end of the guard's pipe, open while the container runs.
+        self._guard: Optional[int] = None
 
     @property
     def container_id(self) -> str:
@@ -124,6 +130,7 @@ class DockerContainer:
             timeout=None,
         )
         self._id = output.strip()
+        self._start_guard(self._name)
         return self._id
 
     def stop(self, urgent: bool = False) -> None:
@@ -149,6 +156,20 @@ class DockerContainer:
         name = self._name
         self._name = None
         self._id = None
+        try:
+            self._remove_now(name, urgent)
+        finally:
+            self._release_guard()
+
+    def _remove_now(self, name: str, urgent: bool) -> None:
+        """Remove the container ``name``, patiently or in a hurry.
+
+        See ``stop()``; split from it so that the guard is released
+        whatever happens here.
+
+        Raises:
+            ContainerError: As ``stop()``.
+        """
         timeout = self._URGENT_STOP_SECONDS if urgent else self._STOP_SECONDS
         try:
             self._remove(name, timeout)
@@ -226,7 +247,7 @@ class DockerContainer:
     def _remove_in_background(self, name: str) -> None:
         """Start ``docker rm -f`` in its own session and do not wait.
 
-        A new session keeps it out of the process group the moulinette
+        A new session keeps it out of the process group the grader
         kills: it goes on after our process has exited.
 
         Raises:
@@ -244,6 +265,45 @@ class DockerContainer:
             raise ContainerError(
                 f"cannot start the detached removal of {name}: {error}"
             ) from error
+
+    def _start_guard(self, name: str) -> None:
+        """Start a detached guard that removes the container if we die.
+
+        The guard reads a pipe whose write end only our process holds.
+        When our process ends, even by SIGKILL, the kernel closes that
+        end: the guard reads end-of-file and runs ``docker rm -f``.
+        ``stop()`` closes our end once the container is removed, so the
+        guard also ends after a normal run (its removal then finds
+        nothing). A new session keeps it out of the process group the
+        grader kills.
+
+        A guard that cannot start is reported on stderr, not raised: the
+        container's lifetime still bounds how long it can outlive us.
+        """
+        read_end, write_end = os.pipe()
+        try:
+            self._spawner(
+                ["sh", "-c", 'cat > /dev/null; docker rm -f "$1"',
+                 "agent-smith-guard", name],
+                start_new_session=True,
+                stdin=read_end,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as error:
+            os.close(write_end)
+            print(f"cannot start the container guard: {error}",
+                  file=sys.stderr)
+            return
+        finally:
+            os.close(read_end)
+        self._guard = write_end
+
+    def _release_guard(self) -> None:
+        """Close our end of the guard's pipe, if it is open."""
+        if self._guard is not None:
+            os.close(self._guard)
+            self._guard = None
 
     def _docker(self, args: Sequence[str], timeout: Optional[float]) -> str:
         """Run ``docker <args>`` and return its standard output.

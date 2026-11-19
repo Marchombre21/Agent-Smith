@@ -35,7 +35,7 @@ signature and do not hard-code the expected results."""
         """Keep the task to write into the first message.
 
         Args:
-            task: The task as given by the moulinette, first test
+            task: The task as given by the grader, first test
                 already hidden.
         """
         self._task = task

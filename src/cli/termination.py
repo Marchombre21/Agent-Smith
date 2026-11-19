@@ -1,4 +1,4 @@
-"""Turn the moulinette's SIGTERM into an exception the CLI can handle."""
+"""Turn the grader's SIGTERM into an exception the CLI can handle."""
 
 import signal
 from types import FrameType
@@ -18,7 +18,7 @@ class TerminationRequested(BaseException):
 class TerminationGuard:
     """Context manager that raises ``TerminationRequested`` on SIGTERM.
 
-    At its time limit the moulinette sends SIGTERM to the whole process
+    At its time limit the grader sends SIGTERM to the whole process
     group, then SIGKILL 10 s later. Python's default reaction to SIGTERM
     is to die at once, without running ``finally`` or ``__exit__``: no
     ``solution.json``, no cleanup. Inside this guard, SIGTERM becomes an

@@ -4,7 +4,7 @@ Copied from the subject (V.1.1, V.2, V.3 and V.4). Only the layout was
 changed, to fit the line length of flake8: names, types, defaults,
 docstrings and descriptions are the subject's. The subject gives no
 field descriptions for ``MBPPTaskInput``: they come from the
-moulinette's ``models_public.py``.
+reference models (``models_public.py``) of the evaluation tool.
 """
 
 from datetime import datetime
