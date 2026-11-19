@@ -19,16 +19,17 @@ if not testbed_path_temp:
     raise ValueError("Missing TESTBED_PATH variable to launch MCP server.")
 
 TESTBED_PATH = os.path.abspath(testbed_path_temp)
+LOGICAL_ROOT = "/testbed"
 
 
 def _resolve_path(path: str) -> str:
     """Return the absolute normalized path, or raise ToolError if outside."""
 
-    if path.startswith("/testbed") and Path(path).is_relative_to("/testbed"):
-        path = path.replace("/testbed", TESTBED_PATH, 1)
+    if Path(path).is_relative_to(LOGICAL_ROOT):
+        path = str(Path(path).relative_to(LOGICAL_ROOT))
     complete_filepath = os.path.normpath(os.path.join(TESTBED_PATH, path))
     if not Path(complete_filepath).is_relative_to(TESTBED_PATH):
-        raise ToolError("You cannot access outside of /testbed")
+        raise ToolError(f"You cannot access outside of {LOGICAL_ROOT}")
 
     return complete_filepath
 
@@ -536,7 +537,7 @@ def run_command(command: str, workdir: str = ".") -> str:
 
     if run_return.returncode == 137:
         run_return.stderr += (
-            f"\n[Command killed after {COMMAND_TIMEOUT}s" " timeout]"
+            f"\n[Command killed after {COMMAND_TIMEOUT}s timeout]"
         )
 
     return (
