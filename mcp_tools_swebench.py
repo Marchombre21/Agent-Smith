@@ -26,7 +26,7 @@ def _resolve_path(path: str) -> str:
     """Return the absolute normalized path, or raise ToolError if outside."""
 
     if Path(path).is_relative_to(LOGICAL_ROOT):
-        path = Path(path).relative_to(LOGICAL_ROOT)
+        path = str(Path(path).relative_to(LOGICAL_ROOT))
     complete_filepath = os.path.normpath(os.path.join(TESTBED_PATH, path))
     if not Path(complete_filepath).is_relative_to(TESTBED_PATH):
         raise ToolError(f"You cannot access outside of {LOGICAL_ROOT}")
