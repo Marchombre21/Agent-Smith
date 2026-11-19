@@ -16,26 +16,26 @@ from src.sandbox_port import SandboxPort
 class SweBenchTask(BenchmarkTask):
     """A SWE-bench task read from ``--task-file``.
 
-    Wraps the input given by the moulinette (issue, Docker image,
+    Wraps the input given by the grader (issue, Docker image,
     evaluation script) and answers the questions of the CLI: its
     identifier, its prompt, and how to conclude.
     """
 
-    # First line of a diff written by git; the moulinette rejects a
+    # First line of a diff written by git; the grader rejects a
     # solution that does not look like a patch.
     _DIFF_START = "diff --git "
     # Where the SWE-bench images keep the repository to fix.
     _TESTBED_PATH = "/testbed"
     # The container removes itself after this long if nobody did: the
     # task's 900 s limit, the 10 s before SIGKILL, and a margin. It never
-    # cuts a run, the moulinette stops the agent before.
+    # cuts a run, the grader stops the agent before.
     _CONTAINER_LIFETIME_SECONDS = 960
 
     def __init__(self, task: SWEBenchTaskInput) -> None:
         """Keep the input of the task.
 
         Args:
-            task: The task as given by the moulinette.
+            task: The task as given by the grader.
         """
         self._task = task
 
@@ -113,8 +113,8 @@ class SweBenchTask(BenchmarkTask):
 
         The subject's mechanism: the model calls
         ``final_answer(get_patch())`` and its argument is the solution.
-        Nothing is rebuilt when it is missing, as for MBPP (unit 56
-        rejected): a run without ``final_answer`` failed, and the report
+        Nothing is rebuilt when it is missing, as for MBPP: a run
+        without ``final_answer`` failed, and the report
         measures when the model submits.
 
         Args:

@@ -38,6 +38,10 @@ class BenchmarkCli(ABC):
     """
 
     _PROVIDERS_FILE = Path("configs/providers.json")
+    # Ctrl+C: the error written in solution.json, and the exit code
+    # (128 + SIGINT, the shell's convention for an interrupted command).
+    _INTERRUPTED = "interrupted by the user (Ctrl+C)"
+    _INTERRUPTED_EXIT = 130
 
     def __init__(
         self,
@@ -73,13 +77,13 @@ class BenchmarkCli(ABC):
     ) -> int:
         """Build the CLI from the configuration files and run it.
 
-        Paths are relative to the current directory: the moulinette runs
-        the agent from the root of the repository.
+        Paths are relative to the current directory: the grader runs the
+        agent from the root of the repository.
 
         Args:
             settings_path: Settings of this agent (``configs/agent_*.json``).
             started_at: ``time.monotonic()`` taken before the imports, by
-                ``__main__`` (design C).
+                ``__main__``.
             argv: Options without the program name; None reads
                 ``sys.argv``.
 
@@ -98,20 +102,20 @@ class BenchmarkCli(ABC):
             return cls(settings, registry, http, started_at).main(argv)
 
     def main(self, argv: Optional[Sequence[str]] = None) -> int:
-        """Solve one task and write ``solution.json`` (design B).
+        """Solve one task and write ``solution.json``.
 
         Args:
             argv: Options without the program name; None reads
                 ``sys.argv``.
 
-        The task runs under a ``TerminationGuard``: the moulinette's
-        SIGTERM at its time limit stops it, and what is known is still
-        written.
+        The task runs under a ``TerminationGuard``: the grader's SIGTERM
+        at its time limit stops it, and what is known is still written.
+        Ctrl+C stops it the same way.
 
         Returns:
             0 once the file is written, whatever the outcome of the
-            task; 1 if the file cannot be written, the only failure the
-            moulinette must see.
+            task; 130 after Ctrl+C, once the file is written; 1 if the
+            file cannot be written, the only failure the grader must see.
 
         Raises:
             SystemExit: an option is missing or unknown (code 2, from
@@ -125,6 +129,8 @@ class BenchmarkCli(ABC):
         except OSError as error:
             print(f"cannot write {args.output}: {error}", file=sys.stderr)
             return 1
+        if output.error == self._INTERRUPTED:
+            return self._INTERRUPTED_EXIT
         return 0
 
     def _parse_args(
@@ -155,7 +161,7 @@ class BenchmarkCli(ABC):
         return parser.parse_args(argv)
 
     def _resolve_model(self, args: argparse.Namespace) -> tuple[str, str]:
-        """Choose the provider URL and the model of the run (design I).
+        """Choose the provider URL and the model of the run.
 
         The command line wins; what it leaves out comes from the
         settings. The default model is only valid with the default
@@ -187,18 +193,19 @@ class BenchmarkCli(ABC):
         return (url if url is not None else default.base_url), model
 
     def _solve(self, args: argparse.Namespace) -> SolutionOutput:
-        """Solve the task given by ``args``, whatever happens (design B).
+        """Solve the task given by ``args``, whatever happens.
 
         Any failure (unreadable task, unknown provider, missing key,
         sandbox that does not start, bug) becomes an output with
         ``success=False`` and ``error``, so that ``solution.json`` is
         always written. The steps already recorded are kept.
-        ``KeyboardInterrupt`` and ``SystemExit`` are not ``Exception``
-        subclasses: they go through, as the subject requires.
-        ``TerminationRequested`` (SIGTERM, see ``TerminationGuard``) is
-        caught on purpose: the run stops where it is, without another
-        LLM call or test, the ``with`` blocks it crossed have already
-        closed the sandbox, and the steps done are written.
+        ``SystemExit`` is not an ``Exception`` subclass: it goes through.
+        ``TerminationRequested`` (SIGTERM, see ``TerminationGuard``) and
+        ``KeyboardInterrupt`` (Ctrl+C) are caught on purpose, here and
+        nowhere below: the sandbox lets them reach the loop, the run
+        stops where it is, without another LLM call or test, the
+        ``with`` blocks they crossed have already removed the container
+        and closed the sandbox, and the steps done are written.
 
         Args:
             args: The parsed options.
@@ -218,16 +225,20 @@ class BenchmarkCli(ABC):
             url, model = self._resolve_model(args)
             recorder = StepRecorder(task_id, self._benchmark(), url, model)
             return self._run(task, url, model, recorder)
-        except (Exception, TerminationRequested) as error:
+        except (Exception, TerminationRequested, KeyboardInterrupt) as error:
             if recorder is None:
                 recorder = StepRecorder(
                     task_id, self._benchmark(), url, model
                 )
+            message = (
+                self._INTERRUPTED if isinstance(error, KeyboardInterrupt)
+                else f"{type(error).__name__}: {error}"
+            )
             return recorder.finish(
                 success=False,
                 solution="",
                 total_time_seconds=self._clock() - self._started_at,
-                error=f"{type(error).__name__}: {error}",
+                error=message,
             )
 
     def _run(
@@ -322,8 +333,8 @@ class BenchmarkCli(ABC):
     def _write(output: SolutionOutput, path: str) -> None:
         """Write ``output`` as JSON to ``path`` (``--output``).
 
-        The parent directories are created if needed: the moulinette
-        gives a path, not the promise that its directory exists.
+        The parent directories are created if needed: the grader gives a
+        path, not the promise that its directory exists.
 
         Args:
             output: The output of the run, successful or not.
@@ -331,7 +342,7 @@ class BenchmarkCli(ABC):
 
         Raises:
             OSError: the file cannot be written (``main`` turns it into
-                a non-zero exit code, design B).
+                a non-zero exit code).
         """
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)

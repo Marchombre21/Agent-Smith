@@ -15,7 +15,7 @@ from src.sandbox_port import SandboxError, SandboxPort
 class MbppTask(BenchmarkTask):
     """An MBPP task read from ``--task-file``.
 
-    Wraps the input given by the moulinette (first test already hidden)
+    Wraps the input given by the grader (first test already hidden)
     and answers the questions of the CLI: its identifier, its prompt,
     and how to conclude.
     """
@@ -28,7 +28,7 @@ class MbppTask(BenchmarkTask):
         """Keep the input of the task.
 
         Args:
-            task: The task as given by the moulinette.
+            task: The task as given by the grader.
         """
         self._task = task
 
@@ -55,7 +55,7 @@ class MbppTask(BenchmarkTask):
     def setup_code(self) -> str:
         """Define ``TESTS``, the given tests, ready for ``run_tests``.
 
-        The model copied tests wrongly or invented its own (essai 62);
+        The model copied tests wrongly or invented its own;
         with ``TESTS`` it checks the exact ones. Each test carries the
         ``test_imports``, which ``run_tests`` ignores: they come after
         the code, in the order of the validation.
@@ -77,7 +77,7 @@ class MbppTask(BenchmarkTask):
     def conclude(
         self, result: RunResult, sandbox: SandboxPort, timeout: float
     ) -> tuple[bool, str]:
-        """Take the code passed to ``final_answer`` and check it (design G).
+        """Take the code passed to ``final_answer`` and check it.
 
         The first test of the task is hidden: passing the public tests
         guarantees nothing, so ``success`` only means "the agent

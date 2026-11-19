@@ -63,7 +63,7 @@ final_answer(get_patch())
         """Keep the task to write into the first message.
 
         Args:
-            task: The task as given by the moulinette.
+            task: The task as given by the grader.
         """
         self._task = task
 

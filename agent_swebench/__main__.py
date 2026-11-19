@@ -2,7 +2,7 @@
 ``python -m agent_swebench --task-file ...``.
 
 The clock is read before the CLI is imported: the import takes about two
-seconds, and the moulinette counts them in the task's timeout.
+seconds, and the grader counts them in the task's timeout.
 """
 
 import sys
