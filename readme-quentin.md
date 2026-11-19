@@ -204,21 +204,29 @@ flowchart TD
 What always happens:
 
 - `solution.json` is written whatever the outcome of the task. The exit code
-  is 0 once the file is written, and 1 only if it cannot be written.
-- SIGTERM becomes an exception (`TerminationGuard`), so what is known is
-  still written before the process ends.
+  is 0 once the file is written, 130 after Ctrl+C, and 1 only if the file
+  cannot be written.
+- SIGTERM becomes an exception (`TerminationGuard`), and Ctrl+C stops the run
+  the same way: what is known is still written before the process ends,
+  without a traceback.
 - The clock starts when the process starts, not at the first LLM call,
   because the evaluation counts the launch too.
 
 For SWE-bench, `DockerContainer` starts the task image, the MCP tools work
-inside it, and the container is removed at the end. Three layers make sure
-none is left behind:
+inside it, and the container is removed at the end. The container has no
+network (`--network none`): the model's commands cannot download anything or
+fetch a solution from outside. Four layers make sure none is left behind:
 
 | Situation | What removes the container |
 |---|---|
 | Normal end, or an ordinary error | the `with` block, patiently |
-| SIGTERM | a short removal, then a detached process if it is not enough |
-| The process dies without running code | the container deletes itself after its lifetime |
+| SIGTERM or Ctrl+C | a short removal, then a detached process if it is not enough |
+| `kill -9`, or the process dies without running code | a detached guard, within one or two seconds |
+| Even the guard cannot act | the container deletes itself after its lifetime |
+
+The guard is a small process started with the container. It waits on a pipe
+whose other end only the agent holds. When the agent dies, even by `kill -9`,
+the kernel closes that end, and the guard runs `docker rm -f`.
 
 ## Agent loop
 
@@ -398,8 +406,8 @@ set; the report explains how those runs were handled.
 
 ### Ablations
 
-Each variant changes one thing, with `codestral-latest` on the six tasks of
-the exam pool (`sympy__sympy-14711`, the unstable one, three times: 8 runs per
+Each variant changes one thing, with `codestral-latest` on six SWE-bench
+Verified tasks (`sympy__sympy-14711`, the unstable one, three times: 8 runs per
 condition):
 
 | Condition | Change | Tasks passed (of 8) |
@@ -417,8 +425,17 @@ the three changes shows a gain in pass rate.
 
 ### Selected model
 
-`codestral-latest` stays the default model: it solves 3/3, and the ablations
-were run on it. `ministral-8b-latest` also solves 3/3 for half the cost.
+Each agent has its own default model, in `configs/agent_*.json`:
+
+- **SWE-bench: `codestral-latest`.** It solves 3/3, and the ablations were run
+  on it. `ministral-8b-latest` also solves 3/3 for half the cost.
+- **MBPP: `nemotron-3.5-bolt-e4b` (Nvidia).** Chosen from 15 exam-like runs
+  (5 random tasks each) per candidate. The three best models solve 85 to 88 %
+  of the tasks, which is within noise, but this one needed no retry and no task
+  took more than 25 s, where the two Mistral models had retries on two tasks
+  out of three and tasks up to 78 s. MBPP allows 120 s per task and the exam
+  does not re-run a failed task. The two agents also use different providers,
+  so they do not share rate limits when they run at the same time.
 Models to disregard (0/3): `nemotron-3-120b-a12b`, `gemini-3.1-flash-lite`
 and the OpenRouter version of `nemotron-3-ultra`.
 

@@ -43,8 +43,8 @@ class ObservationFormatter:
     # Characters kept free for the marker, so the result fits max_chars.
     _MARKER_ROOM = 40
 
-    # Provisoire : filet de sécurité tant que le contrat #9 (qui tronque,
-    # et à combien) est ouvert ; 2 000 caractères pour MBPP, à mesurer.
+    # The default suits MBPP; the agents pass max_observation_chars from
+    # configs/agent_*.json.
     def __init__(self, max_chars: int = 2000) -> None:
         """Set the longest observation the LLM may receive.
 

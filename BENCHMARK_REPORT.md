@@ -292,8 +292,9 @@ Reading:
 
 ## 5. Ablation study
 
-Model: `codestral-latest`. Tasks: the six tasks of the exam pool, with
-`sympy__sympy-14711` run three times because it is unstable (8 runs per
+Model: `codestral-latest`. Tasks: six SWE-bench Verified tasks (the three
+of section 1, plus `sympy__sympy-13480`, `sympy__sympy-18189` and
+`sympy__sympy-14711`), with `sympy__sympy-14711` run three times because it is unstable (8 runs per
 condition). Only one thing changes per condition.
 
 Each condition was measured twice. The first measurement is from 2026-11-12.
@@ -377,9 +378,9 @@ improves the pass rate.
 
 ### Selected model
 
-`codestral-latest` stays the default model of the agent. It solves 3/3 and
-it is the model on which the ablations were run, so the ablation results
-apply to it. `ministral-8b-latest` solves 3/3 as well, at half the cost, and
+`codestral-latest` stays the default model of the SWE-bench agent. It solves
+3/3 and it is the model on which the ablations were run, so the ablation
+results apply to it. `ministral-8b-latest` solves 3/3 as well, at half the cost, and
 is the better choice if tokens or time matter more than consistency with the
 ablations. Three tasks per model do not separate two models that both solve
 all of them.
@@ -405,6 +406,6 @@ benchmark/ablations/<condition>/<date>/<task>/solution.json   section 5
 tokens, output tokens, seconds, error.
 
 In `benchmark/ablations/`, each condition has eight runs per date: the six
-tasks of the pool, and `sympy__sympy-14711` two more times
+tasks, and `sympy__sympy-14711` two more times
 (`sympy__sympy-14711-run1` to `-run3`). Dates are `2026-11-12` for the first
 measurement and `2026-11-18` for the second, both with the four conditions.

@@ -11,7 +11,7 @@ class TaskBudget:
     """What one task has used of its limits so far, and what is left.
 
     The clock starts when the process starts, not at the first LLM call:
-    the moulinette counts the launch of ``uv`` and the imports too.
+    the grader counts the launch of ``uv`` and the imports too.
     Time is read through an injectable ``clock`` (``time.monotonic`` by
     default), so tests can move time forward by hand.
     """
