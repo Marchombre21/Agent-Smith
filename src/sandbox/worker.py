@@ -353,8 +353,6 @@ def main() -> None:
         except FinalAnswerSignal as e:
             answer = str(e.args[0])
         except Exception as e:
-            # Remove the worker's own frames (exec() call, tool and resource
-            # wrappers): useless for the LLM and they reveal the host path.
             tb = _format_tb(e)
             error = "".join(tb)
         sys.stdout.write(
