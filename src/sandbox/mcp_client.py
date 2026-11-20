@@ -5,7 +5,8 @@ from asyncio import AbstractEventLoop
 from typing import Literal, Any
 from fastmcp import Client
 from fastmcp.client import StdioTransport
-from fastmcp.exceptions import ToolError, McpError
+from fastmcp.exceptions import ToolError
+from mcp import McpError
 from mcp.types import (
     Tool,
     Prompt,
@@ -131,7 +132,7 @@ class MCPClient:
             args (dict[str, Any]): The arguments needed to get the wanted
             prompt.
         """
-        client: Client = self._get_client
+        client: Client[Any] = self._get_client
         try:
             result: GetPromptResult = self.loop.run_until_complete(
                 client.get_prompt(name, args)
@@ -163,7 +164,7 @@ class MCPClient:
         Args:
             uri (str): The uri of the wanted resource.
         """
-        client: Client = self._get_client
+        client: Client[Any] = self._get_client
         try:
             result = self.loop.run_until_complete(client.read_resource(uri))
             final_result: list[str] = []

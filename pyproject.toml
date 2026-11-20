@@ -29,3 +29,6 @@ dev = [
 
 [tool.black]
 line-length = 79
+
+[tool.mypy]
+untyped_calls_exclude = ["fastmcp"]

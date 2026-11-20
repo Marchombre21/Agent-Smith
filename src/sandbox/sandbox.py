@@ -164,8 +164,6 @@ class Sandbox(SandboxPort):
                     state_reset=True,
                 )
 
-            # If the answer is "" it means that the worker process died for
-            # unknown reason (maybe a sys.exit() from the code).
             if brut_answer == "":
                 exit_code = self._restart(kill=False)
                 return ExecutionResult(
@@ -271,10 +269,6 @@ class Sandbox(SandboxPort):
                 )
                 try:
                     response = self.client.call_tool(name=name, args=arguments)
-
-                # I except just ToolExecutionError because
-                # if ServerMCPError is raised, it must raise until parent,
-                # since it's a SandboxError
                 except ToolExecutionError as e:
                     return {"result": None, "error": str(e)}
                 return {"result": response, "error": None}

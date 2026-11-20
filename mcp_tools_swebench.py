@@ -67,9 +67,6 @@ def _run(
             cwd=final_cwd,
             input=input,
         )
-    # Missing executable or cwd: subprocess raises instead of returning a
-    # code. Mimic docker exec (code 127) so callers only check returncode.
-    # (e.g. edit_file rollback)
     except FileNotFoundError as e:
         return CompletedProcess(final_cmd, 127, stderr=str(e), stdout="")
 
