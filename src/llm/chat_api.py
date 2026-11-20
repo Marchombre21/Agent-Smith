@@ -31,10 +31,8 @@ class ChatCompletionsApi:
     """
 
     _log = logging.getLogger(__name__)
-    # Rough ratio used only when "usage" is missing or impossible. 3 rather
-    # than 4: measured 3.0-3.8, and overestimating protects the budget.
+
     _CHARS_PER_TOKEN = 3
-    # Length of the response body quoted in error messages.
     _BODY_EXCERPT = 300
 
     def __init__(

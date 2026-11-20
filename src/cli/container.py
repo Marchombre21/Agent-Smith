@@ -47,14 +47,10 @@ class DockerContainer:
     """
 
     _NAME_PREFIX = "agent-smith-"
-    # Normal end: no rush, but bounded (the task's own deadline is near).
     _STOP_SECONDS = 60.0
     _RETRY_SECONDS = 30.0
-    # Interruption: well within the 10 s between SIGTERM and SIGKILL.
     _URGENT_STOP_SECONDS = 5.0
     _INSPECT_SECONDS = 10.0
-    # Docker answers these when the container is already gone or being
-    # removed (``--rm`` and ``rm -f`` can race): the goal is reached.
     _DONE_MESSAGES = ("No such container", "already in progress")
 
     def __init__(
@@ -89,7 +85,6 @@ class DockerContainer:
         self._spawner = spawner
         self._name: Optional[str] = None
         self._id: Optional[str] = None
-        # Our end of the guard's pipe, open while the container runs.
         self._guard: Optional[int] = None
 
     @property

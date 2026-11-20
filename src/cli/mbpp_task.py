@@ -20,8 +20,6 @@ class MbppTask(BenchmarkTask):
     and how to conclude.
     """
 
-    # Name of the list of given tests in the sandbox; MbppPrompt tells
-    # the model to pass it to run_tests.
     _TESTS_NAME = "TESTS"
 
     def __init__(self, task: MBPPTaskInput) -> None:
@@ -99,8 +97,6 @@ class MbppTask(BenchmarkTask):
             return False, ""
         solution = result.final_answer
         if timeout <= 0:
-            # success is only informative: losing it is cheaper than
-            # going past the subject's time limit.
             return False, solution
         return self._passes_public_tests(solution, sandbox, timeout), solution
 

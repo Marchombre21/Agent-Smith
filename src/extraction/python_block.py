@@ -18,6 +18,10 @@ class PythonBlockExtractor(CodeExtractor):
     # One fenced block. The closing fence may be missing: the answer can
     # be cut by max_tokens, or the model may stop right after the code
     # with <end_code> and no fence, so the end of the text also closes.
+    # Codestral sometimes glues its next thought to the closing fence
+    # ("```Thought: ..."): that line closes the block too, or the thought
+    # would run as code. Only ```python, ```py or ```python3 alone on its
+    # line is left alone: it opens the next block.
     _BLOCK = re.compile(
         r"""
         ^[ \t]*```                # opening fence, at the start of a line
@@ -26,6 +30,8 @@ class PythonBlockExtractor(CodeExtractor):
         (?P<body>.*?)             # the code: as little as possible...
         (?P<close>                # ...up to the first of:
             ^[ \t]*```[ \t]*$     #   a closing fence on its own line,
+          | (?P<glued>^[ \t]*```  #   a closing fence glued to text,
+              (?![ \t]*(?i:python3?|py)?[ \t]*$))  # not a Python opening,
           | \Z                    #   or the end of the text
         )
         """,
@@ -49,9 +55,9 @@ class PythonBlockExtractor(CodeExtractor):
         dedented, so an indented block does not raise IndentationError.
 
         Repairs, each reported in ``warnings`` for the LLM: an opening
-        ```python glued to the text before it, a block tagged ``py``,
-        ``python3`` or not tagged at all, a missing closing fence,
-        several blocks joined.
+        ```python glued to the text before it, a closing ``` glued to
+        the text after it, a block tagged ``py``, ``python3`` or not
+        tagged at all, a missing closing fence, several blocks joined.
 
         Returns:
             The joined code; None when there is no non-empty Python
@@ -83,6 +89,12 @@ class PythonBlockExtractor(CodeExtractor):
                 warnings.append(
                     f"A code block was tagged {match['lang']!r}; it was "
                     "run as Python. Tag it ```python."
+                )
+            if match["glued"]:
+                warnings.append(
+                    "A closing ``` was glued to the text after it; the "
+                    "block was ended there. Put the closing ``` on its own "
+                    "line, then write <end_code>."
                 )
             if not match["close"]:
                 warnings.append(

@@ -37,10 +37,8 @@ class RotatingClient(LLMClient):
     """
 
     _log = logging.getLogger(__name__)
-    # Block applied to a rate-limited key when the provider gives no
-    # Retry-After: free tiers mostly count their limits per minute.
+
     _DEFAULT_RATE_LIMIT_WAIT = 60.0
-    # Backoff after a provider failure: 1, 2, 4, then 8 s at most.
     _BACKOFF_BASE = 1.0
     _BACKOFF_MAX = 8.0
 

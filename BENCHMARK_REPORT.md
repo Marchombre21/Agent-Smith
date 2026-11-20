@@ -194,6 +194,13 @@ runs in which every request got an answer.
 - **Mistral** answers every run (24/24, 8/8), but with 54 to 165 retries per
   model: rate limits, absorbed by the key rotation. It is also the slowest,
   about 12 s per request.
+- **Mistral with five keys, after this run:** we added three Mistral keys
+  and ran `codestral-latest` again on `pytest-dev__pytest-7432` and
+  `sympy__sympy-14711`. Both runs reached 30 steps and spent 128 s and 182 s
+  in LLM calls (4 to 6 s per request), against 329 to 439 s for the
+  30-step runs of the same tasks with two keys. Both stopped at the
+  iteration limit and failed, as before: the extra keys only cut the waiting
+  time. The tables keep the two-key figures they were measured with.
 - **Gemini** depends on the model. `gemini-3.5-flash-lite` is reliable (3
   retries). `gemini-3-flash-preview` stopped on HTTP 429 in five of its eight
   runs: the daily quota of a preview model is small. `gemini-3.1-flash-lite`

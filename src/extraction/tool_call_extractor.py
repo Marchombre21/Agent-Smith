@@ -19,8 +19,8 @@ class ToolCallExtractor(CodeExtractor):
     ``_parse``, ``_FORMAT`` and ``_LABEL`` (template method pattern).
     """
 
-    _FORMAT: str  # ExtractionResult.format_name, e.g. "hermes"
-    _LABEL: str  # How a call is named to the LLM, e.g. "<tool_call>"
+    _FORMAT: str
+    _LABEL: str
 
     @staticmethod
     def _reject_constant(constant: str) -> Any:

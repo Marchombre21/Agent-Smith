@@ -23,8 +23,6 @@ class Orchestrator:
     prompt, the tools, how the solution is built) is decided by the CLI.
     """
 
-    # The model stops before writing an observation itself: the end of a
-    # Python block, of a Hermes tool call, or a ReAct "Observation:".
     _STOP_SEQUENCES = ("<end_code>", "</tool_call>", "Observation:")
     _EXIT_CALLED = (
         "SystemExit({code}): your code called exit() or raised "
@@ -61,7 +59,6 @@ class Orchestrator:
                 given tests as ``TESTS``); empty for nothing.
         """
         self._setup_code = setup_code
-        # True when the sandbox holds what setup_code defines.
         self._ready = not setup_code
         self._llm = llm
         self._sandbox = sandbox
@@ -71,7 +68,6 @@ class Orchestrator:
         self._budget = budget
         self._recorder = recorder
         self._repeats = repeats
-        # Answers the model has written so far: the "step" of a repeat.
         self._answers = 0
 
     def run(self) -> RunResult:
@@ -127,7 +123,6 @@ class Orchestrator:
         """
         if not self._ready:
             self._setup()
-        # Read before the call: the call itself uses up the budget.
         call_limit = self._budget.next_call_max_tokens
         try:
             response = self._llm.complete(
@@ -158,15 +153,11 @@ class Orchestrator:
                 )
                 raise
             except SystemExit as exit_:
-                # The sandbox passes on the SystemExit of the model's code
-                # (subject V.2): it reaches the loop, which reports it to
-                # the model instead of stopping without solution.json.
                 result = ExecutionResult(
                     error=self._EXIT_CALLED.format(code=exit_.code)
                 )
         if result is not None and result.state_reset and self._setup_code:
             self._ready = False
-        # A reply that used every token it was allowed was cut off.
         cut_at = (
             response.output_tokens
             if response.output_tokens >= call_limit
@@ -176,8 +167,6 @@ class Orchestrator:
             extracted, result, cut_at=cut_at
         )
         if extracted.code is not None and result is not None:
-            # Steps without code are left out: the extraction already
-            # explains them, and two of them in a row are not a repeat.
             repeat_of = self._repeats.check(
                 self._answers,
                 extracted.code,

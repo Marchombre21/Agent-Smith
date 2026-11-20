@@ -17,7 +17,6 @@ class StepRecorder:
     from one step to the next, as ``display`` checks.
     """
 
-    # display warns about an empty llm_output; same text as Conversation.
     _EMPTY_ANSWER = "(empty answer)"
 
     def __init__(
@@ -137,7 +136,6 @@ class StepRecorder:
             success=success,
             solution=solution,
             iterations=len(self._steps),
-            # Each step is one request plus its failed tries.
             total_requests=sum(1 + s.retries for s in self._steps),
             total_input_tokens=sum(s.input_tokens for s in self._steps),
             total_output_tokens=sum(s.output_tokens for s in self._steps),

@@ -120,7 +120,7 @@ class ProviderConfig(BaseModel):
             match = pattern.match(name)
             if match is None or not value.strip():
                 continue
-            suffix = name[len(key_var):]  # "" for the first key, "_2" etc.
+            suffix = name[len(key_var):]
             account_id: str | None = None
             if needs_account:
                 account_var = f"{self.key_env_prefix}_ACCOUNT_ID{suffix}"

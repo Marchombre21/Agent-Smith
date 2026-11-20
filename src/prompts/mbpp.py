@@ -50,7 +50,6 @@ signature and do not hard-code the expected results."""
         if task.test_imports:
             lines.append("Test imports:")
             lines.extend(task.test_imports)
-        # TESTS is defined in the sandbox by MbppTask.setup_code.
         lines.append("Tests (already in the list TESTS):")
         lines.extend(task.test_list)
         return "\n".join(lines)

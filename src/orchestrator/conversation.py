@@ -24,21 +24,15 @@ class Conversation:
     short marker. The full text is kept here: only the view sent changes.
     """
 
-    # Tuned to overestimate a little: the real count is the provider's.
     _CHARS_PER_TOKEN = 3
-    # Role name and separators the API adds around each message.
     _TOKENS_PER_MESSAGE = 4
-    # Several APIs refuse an assistant message with no content.
     _EMPTY_ANSWER = "(empty answer)"
     _OBSERVATION_PREFIX = "Observation: "
-    # The variables survive in the sandbox: printing one again is cheaper
-    # than calling the tool that produced it.
     _REMOVED_OBSERVATION = (
         "[Output of an earlier step removed to save tokens "
         "({length} characters). Your variables still exist in the "
         "sandbox: print them again if needed.]"
     )
-    # System prompt and task: the messages before the first answer.
     _OPENING_MESSAGES = 2
 
     def __init__(

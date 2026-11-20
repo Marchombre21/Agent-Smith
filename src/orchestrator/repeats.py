@@ -20,7 +20,6 @@ class RepeatDetector:
     repeat.
     """
 
-    # What changes from one run to the next with nothing new to learn.
     _NOISE = re.compile(
         r"random seed:\s*\d+"
         r"|PYTHONHASHSEED=\d+"

@@ -38,8 +38,6 @@ class BenchmarkCli(ABC):
     """
 
     _PROVIDERS_FILE = Path("configs/providers.json")
-    # Ctrl+C: the error written in solution.json, and the exit code
-    # (128 + SIGINT, the shell's convention for an interrupted command).
     _INTERRUPTED = "interrupted by the user (Ctrl+C)"
     _INTERRUPTED_EXIT = 130
 
@@ -272,8 +270,6 @@ class BenchmarkCli(ABC):
             url, model, self._registry, self._http
         )
         prompt = task.prompt()
-        # The MCP server reads its variables when it starts: the task's
-        # environment is opened first, and closed after the sandbox.
         with task.mcp_environment() as env, \
                 self._open_sandbox(env) as sandbox:
             system_prompt = prompt.system_prompt(sandbox.manual())

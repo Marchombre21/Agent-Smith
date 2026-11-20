@@ -19,8 +19,6 @@ class CodeExtraction:
     handle None.
     """
 
-    # Observation sent when no format was recognised. Keep it in line
-    # with the example given in the system prompt.
     _NO_CODE = (
         "No code was found in your answer, so nothing was run.\n"
         "Write your code in one block, then stop:\n"

@@ -21,14 +21,8 @@ class SweBenchTask(BenchmarkTask):
     identifier, its prompt, and how to conclude.
     """
 
-    # First line of a diff written by git; the grader rejects a
-    # solution that does not look like a patch.
     _DIFF_START = "diff --git "
-    # Where the SWE-bench images keep the repository to fix.
     _TESTBED_PATH = "/testbed"
-    # The container removes itself after this long if nobody did: the
-    # task's 900 s limit, the 10 s before SIGKILL, and a margin. It never
-    # cuts a run, the grader stops the agent before.
     _CONTAINER_LIFETIME_SECONDS = 960
 
     def __init__(self, task: SWEBenchTaskInput) -> None:
@@ -98,7 +92,6 @@ class SweBenchTask(BenchmarkTask):
                     prefix="agent-smith-eval-", suffix=".sh",
                 ) as script:
             script.write(self._task.eval_script)
-            # Written to disk now: the server reads it by its name.
             script.flush()
             yield {
                 "CONTAINER_ID": container.container_id,

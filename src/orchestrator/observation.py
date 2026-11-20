@@ -18,8 +18,6 @@ class ObservationFormatter:
 
     _NO_OUTPUT = "(no output)"
     _SILENT_RUN = "The code ran without error and printed nothing."
-    # The loop stops right after this step: the model never reads it, but
-    # solution.json does, and must say what really happened.
     _FINAL_ANSWER = "final_answer() was called: the task ends here."
     _TIMED_OUT = (
         "Execution stopped: time limit reached. The output above is partial."
@@ -40,11 +38,8 @@ class ObservationFormatter:
     )
 
     _CUT_MARKER = "\n[... {cut} characters cut ...]\n"
-    # Characters kept free for the marker, so the result fits max_chars.
     _MARKER_ROOM = 40
 
-    # The default suits MBPP; the agents pass max_observation_chars from
-    # configs/agent_*.json.
     def __init__(self, max_chars: int = 2000) -> None:
         """Set the longest observation the LLM may receive.
 
@@ -96,8 +91,6 @@ class ObservationFormatter:
         )
         output = result.stdout.rstrip("\n")
         if result.final_answer is not None:
-            # What was printed before the call is kept; no "printed
-            # nothing" sentence, the call itself is the outcome.
             if output:
                 parts.append(output)
             parts.append(self._FINAL_ANSWER)
